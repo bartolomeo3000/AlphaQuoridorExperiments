@@ -3,23 +3,51 @@
 # ====================
 
 # Import packages
+import os
 from game import State
-from pv_mcts import pv_mcts_action
-from tensorflow.keras.models import load_model
-from tensorflow.keras import backend as K
-from pathlib import Path
+from pv_mcts import pv_mcts_action, pv_mcts_scores
+from dual_network import load_model, DualNetwork, DN_OUTPUT_SIZE
+from config import (
+    EN_GAME_COUNT, EN_TEMPERATURE, EN_TEMP_CUTOFF,
+    EN_PROMOTE_THRESHOLD, EN_DRAW_DISTANCE_SCORING, DRAW_SHAPE_SCALE,
+    MODEL_DIR,
+)
 from shutil import copy
+from copy import deepcopy
+from self_play import write_data
 import numpy as np
+import io
+import torch
+import multiprocessing as mp
 
-# Prepare parameters
-EN_GAME_COUNT = 10 # Number of games per evaluation (originally 400)
-EN_TEMPERATURE = 1.0 # Temperature of the Boltzmann distribution
+from config import (
+    EN_GAME_COUNT, EN_TEMPERATURE, EN_TEMP_CUTOFF,
+    EN_PROMOTE_THRESHOLD, EN_DRAW_DISTANCE_SCORING, DRAW_SHAPE_SCALE,
+)
+
+# Persistent pool — created once, reused across all evaluation calls
+_pool = None
+
+def _get_pool():
+    global _pool
+    if _pool is None:
+        _pool = mp.Pool(processes=max(1, mp.cpu_count() - 1))
+    return _pool
 
 # Points for the first player
+
 def first_player_point(ended_state):
     # 1: first player wins, 0: first player loses, 0.5: draw
     if ended_state.is_lose():
         return 0 if ended_state.is_first_player() else 1
+    if EN_DRAW_DISTANCE_SCORING:
+        N = ended_state.N
+        p_row = ended_state.player[0] // N
+        e_row = ended_state.enemy[0] // N
+        draw_val = DRAW_SHAPE_SCALE * (e_row - p_row) / (N - 1)
+        if not ended_state.is_first_player():
+            draw_val = -draw_val
+        return 0.5 + draw_val
     return 0.5
 
 # Execute one game
@@ -45,50 +73,134 @@ def play(next_actions):
 
 # Replace the best player
 def update_best_player():
-    copy('./model/latest.keras', './model/best.keras')
+    copy(os.path.join(MODEL_DIR, 'latest.pt'), os.path.join(MODEL_DIR, 'best.pt'))
     print('Change BestPlayer')
+
+
+# Worker: loads both models on CPU and plays one game.
+# Returns (point_for_model0, game_history) where game_history is
+# a list of (pieces_array, policy_vector, value) tuples suitable for training.
+def _eval_worker(args):
+    sd0_bytes, sd1_bytes, game_idx = args
+
+    model0 = DualNetwork()
+    model0.load_state_dict(torch.load(io.BytesIO(sd0_bytes), map_location='cpu'))
+    model0.eval()
+
+    model1 = DualNetwork()
+    model1.load_state_dict(torch.load(io.BytesIO(sd1_bytes), map_location='cpu'))
+    model1.eval()
+
+    # model0 plays first in even games, second in odd games
+    if game_idx % 2 == 0:
+        models = [model0, model1]
+    else:
+        models = [model1, model0]
+
+    state = State()
+    N = state.N
+    history = []
+    draw_values = []
+    move_count = 0
+
+    while True:
+        if state.is_done():
+            break
+
+        model = models[0] if state.is_first_player() else models[1]
+        t = EN_TEMPERATURE if move_count < EN_TEMP_CUTOFF else 0.0
+
+        scores = pv_mcts_scores(model, deepcopy(state), t, add_noise=False)
+
+        # Record state and policy distribution for training
+        policies = [0] * DN_OUTPUT_SIZE
+        for action, policy in zip(state.legal_actions(), scores):
+            policies[action] = policy
+        history.append([state.pieces_array(), policies, None])
+
+        # Draw shaping value (zero-sum, same formula as self-play)
+        p_row = state.player[0] // N
+        e_row = state.enemy[0] // N
+        draw_values.append(DRAW_SHAPE_SCALE * (e_row - p_row) / (N - 1))
+
+        action = np.random.choice(state.legal_actions(), p=scores)
+        state = state.next(action)
+        move_count += 1
+
+    # Assign training values
+    if state.is_draw():
+        for i in range(len(history)):
+            history[i][2] = draw_values[i]
+    else:
+        value = -1 if state.is_first_player() else 1
+        for i in range(len(history)):
+            history[i][2] = value
+            value = -value
+
+    # Compute point for model0
+    point = first_player_point(state)
+    if game_idx % 2 != 0:
+        point = 1 - point
+
+    return point, history
+
 
 # Network evaluation
 def evaluate_network():
-    # Load the model of the latest player
-    model0 = load_model('./model/latest.keras')
+    # Serialize both models to bytes so workers can load them on CPU
+    def to_bytes(path):
+        model = load_model(path)
+        buf = io.BytesIO()
+        torch.save(model.state_dict(), buf)
+        del model
+        return buf.getvalue()
 
-    # Load the model of the best player
-    model1 = load_model('./model/best.keras')
+    sd0_bytes = to_bytes(os.path.join(MODEL_DIR, 'latest.pt'))
+    sd1_bytes = to_bytes(os.path.join(MODEL_DIR, 'best.pt'))
 
-    # Generate a function to select actions using PV MCTS
-    next_action0 = pv_mcts_action(model0, EN_TEMPERATURE)
-    next_action1 = pv_mcts_action(model1, EN_TEMPERATURE)
-    next_actions = (next_action0, next_action1)
+    args = [(sd0_bytes, sd1_bytes, i) for i in range(EN_GAME_COUNT)]
 
-    # Repeat multiple matches
-    total_point = 0
-    for i in range(EN_GAME_COUNT):
-        # Execute one game
-        if i % 2 == 0:
-            total_point += play(next_actions)
-        else:
-            total_point += 1 - play(list(reversed(next_actions)))
-
-        # Output
-        print('\rEvaluate {}/{}'.format(i + 1, EN_GAME_COUNT), end='')
+    print(f'Evaluate: {EN_GAME_COUNT} games across workers...')
+    pool = _get_pool()
+    results = []
+    points = []
+    eval_history = []
+    completed = 0
+    wins_live = draws_live = losses_live = 0
+    for point, game_history in pool.imap_unordered(_eval_worker, args):
+        results.append((point, game_history))
+        points.append(point)
+        eval_history.extend(game_history)
+        completed += 1
+        if point > 0.6:   wins_live   += 1
+        elif point < 0.4: losses_live += 1
+        else:             draws_live  += 1
+        print(f'\rEvaluate {completed}/{EN_GAME_COUNT}  '
+              f'W:{wins_live}  D:{draws_live}  L:{losses_live}', end='')
     print('')
 
-    # Calculate average points
-    average_point = total_point / EN_GAME_COUNT
-    print('AveragePoint', average_point)
+    # Save eval games to replay buffer — same format as self-play data
+    write_data(eval_history)
+    print(f'Saved {len(eval_history)} eval positions to replay buffer')
 
-    # Clear models
-    K.clear_session()
-    del model0
-    del model1
+    wins   = sum(1 for p in points if p > 0.6)
+    losses = sum(1 for p in points if p < 0.4)
+    draws  = EN_GAME_COUNT - wins - losses
+    average_point = sum(points) / EN_GAME_COUNT
+    print(f'Evaluation result — '
+          f'New wins: {wins}  Draws: {draws}  New losses: {losses}  '
+          f'({EN_GAME_COUNT} games)')
+    print(f'New-model score vs best: {average_point:.4f}  '
+          f'({"PROMOTED" if average_point >= EN_PROMOTE_THRESHOLD else "rejected"})')
+
+    stats = {'score': round(average_point, 4), 'wins': wins, 'draws': draws, 'losses': losses}
 
     # Replace the best player
-    if average_point > 0.5:
+    if average_point >= EN_PROMOTE_THRESHOLD:
         update_best_player()
-        return True
+        return True, stats
     else:
-        return False
+        return False, stats
 
 # Operation check
 if __name__ == '__main__':

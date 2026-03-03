@@ -9,9 +9,136 @@ from collections import deque
 import copy
 from copy import deepcopy
 
+# Global cache for expensive wall legality computation.
+# Key: (walls_tuple, player_pos, enemy_pos)  Value: list of legal wall action indices
+# Shared across all State instances — MCTS nodes with the same board config pay the BFS cost only once.
+_wall_actions_cache = {}
+
+# Edge-blocking cache: walls_tuple -> (h_blocked, v_blocked) bytearrays.
+# h_blocked[pos] = 1  means the edge pos → pos-N (moving UP) is blocked by a wall.
+# v_blocked[pos] = 1  means the edge pos → pos-1 (moving LEFT) is blocked by a wall.
+_edge_cache = {}
+_bfs_dist_cache = {}  # walls_tuple -> (dist_to_row0, dist_to_rowN-1)
+
+
+def _get_blocked_edges(N, walls_tuple):
+    """Build (and cache) edge-blocking tables for a given wall configuration.
+    Horizontal wall at (wr,wc) blocks vertical movement at (wr+1,wc) and (wr+1,wc+1).
+    Vertical   wall at (wr,wc) blocks horizontal movement at (wr,wc+1) and (wr+1,wc+1).
+    """
+    if walls_tuple in _edge_cache:
+        return _edge_cache[walls_tuple]
+    h = bytearray(N * N)
+    v = bytearray(N * N)
+    w1 = N - 1
+    for wp, w in enumerate(walls_tuple):
+        if not w:
+            continue
+        wr, wc = wp // w1, wp % w1
+        if w == 1:  # horizontal
+            h[(wr + 1) * N + wc]     = 1
+            h[(wr + 1) * N + wc + 1] = 1
+        else:       # vertical
+            v[wr       * N + wc + 1] = 1
+            v[(wr + 1) * N + wc + 1] = 1
+    result = (h, v)
+    if len(_edge_cache) < 200_000:
+        _edge_cache[walls_tuple] = result
+    return result
+
+
+def _bfs_goal_distances(N, h, v, goal_row):
+    """Multi-source BFS returning the distance (in moves) from every cell to the
+    nearest cell in goal_row, using the same h/v edge arrays as _bfs_can_reach_row0.
+    Returns a flat list of N² ints. Cells cut off by walls get distance N*N (sentinel).
+    """
+    INF = N * N
+    dist = [INF] * (N * N)
+    queue = deque()
+    for c in range(N):
+        pos = goal_row * N + c
+        dist[pos] = 0
+        queue.append(pos)
+    while queue:
+        pos = queue.popleft()
+        r   = pos // N
+        c_  = pos %  N
+        d   = dist[pos]
+        # Up
+        if r > 0 and not h[pos]:
+            nb = pos - N
+            if dist[nb] == INF:
+                dist[nb] = d + 1
+                queue.append(nb)
+        # Down
+        if r < N - 1 and not h[pos + N]:
+            nb = pos + N
+            if dist[nb] == INF:
+                dist[nb] = d + 1
+                queue.append(nb)
+        # Left
+        if c_ > 0 and not v[pos]:
+            nb = pos - 1
+            if dist[nb] == INF:
+                dist[nb] = d + 1
+                queue.append(nb)
+        # Right
+        if c_ < N - 1 and not v[pos + 1]:
+            nb = pos + 1
+            if dist[nb] == INF:
+                dist[nb] = d + 1
+                queue.append(nb)
+    return dist
+
+
+def _bfs_can_reach_row0(N, h, v, start):
+    """Return True if 'start' can reach row 0 (top row) ignoring piece positions."""
+    if start // N == 0:
+        return True
+    visited = bytearray(N * N)
+    visited[start] = 1
+    queue = deque([start])
+    while queue:
+        pos = queue.popleft()
+        r = pos // N
+        c = pos % N
+        # Up
+        if r > 0 and not h[pos]:
+            nb = pos - N
+            if not visited[nb]:
+                if nb // N == 0:
+                    return True
+                visited[nb] = 1
+                queue.append(nb)
+        # Down
+        if r < N - 1 and not h[pos + N]:
+            nb = pos + N
+            if not visited[nb]:
+                if nb // N == 0:
+                    return True
+                visited[nb] = 1
+                queue.append(nb)
+        # Left
+        if c > 0 and not v[pos]:
+            nb = pos - 1
+            if not visited[nb]:
+                if nb // N == 0:
+                    return True
+                visited[nb] = 1
+                queue.append(nb)
+        # Right
+        if c < N - 1 and not v[pos + 1]:
+            nb = pos + 1
+            if not visited[nb]:
+                if nb // N == 0:
+                    return True
+                visited[nb] = 1
+                queue.append(nb)
+    return False
+
 # Game state
 class State:
-    def __init__(self, board_size=3, num_walls=1, player=None, enemy=None, walls=None, depth=0):
+    def __init__(self, board_size=7, num_walls=5, player=None, enemy=None, walls=None, depth=0, pos_counts=None):
         self.N = board_size
         N = self.N
         if N % 2 == 0:
@@ -21,14 +148,26 @@ class State:
         self.enemy = enemy if enemy != None else [0] * 2
         self.walls = walls if walls != None else [0] * ((N - 1) ** 2)
         self.depth = depth
-        self.draw_depth = 30
+        self.draw_depth = 200  # fallback depth limit
+        self._legal_actions_cache = None  # computed once on first access
+        self._pos_counts = dict(pos_counts) if pos_counts is not None else {}
+        self._repetition_draw = False
 
         if player == None or enemy == None:
             init_pos = N * (N - 1) + N // 2
             self.player[0] = init_pos
             self.player[1] = num_walls
-            self.enemy[0] = init_pos 
+            self.enemy[0] = init_pos
             self.enemy[1] = num_walls
+            self._register_position()  # register starting position
+
+    def _register_position(self):
+        """Record current position; set _repetition_draw if seen 3 times."""
+        key = (self.player[0], self.enemy[0], tuple(self.walls))
+        count = self._pos_counts.get(key, 0) + 1
+        self._pos_counts[key] = count
+        if count >= 3:
+            self._repetition_draw = True
 
      # Check if it's a loss
     def is_lose(self):
@@ -38,7 +177,7 @@ class State:
 
     # Check if it's a draw
     def is_draw(self):
-        return self.depth >= self.draw_depth
+        return self.depth >= self.draw_depth or self._repetition_draw
     
     # Check if the game is over
     def is_done(self):
@@ -86,21 +225,49 @@ class State:
 
             return tables
         
-        return [pieces_of(self.player), pieces_of(self.enemy), walls_of(self.walls)]
-    
+        result = [pieces_of(self.player), pieces_of(self.enemy), walls_of(self.walls)]
+
+        from config import USE_BFS_CHANNELS
+        if USE_BFS_CHANNELS:
+            walls_t = tuple(self.walls)
+            if walls_t not in _bfs_dist_cache:
+                h, v = _get_blocked_edges(N, walls_t)
+                entry = (
+                    _bfs_goal_distances(N, h, v, 0),      # current player's goal: row 0
+                    _bfs_goal_distances(N, h, v, N - 1),  # opponent's goal: row N-1
+                )
+                if len(_bfs_dist_cache) < 200_000:
+                    _bfs_dist_cache[walls_t] = entry
+            else:
+                entry = _bfs_dist_cache[walls_t]
+            result.append(list(entry))
+
+        return result
+
     def legal_actions(self):
         """
         0 - (N ** 2 - 1): Move to a position
         N ** 2- (N ** 2 + (N - 1) ** 2 - 1): Place a horizontal wall
         (N ** 2 + (N - 1) ** 2) - (N ** 2 + 2 * (N - 1) ** 2 - 1): Place a vertical wall
         """
-        actions = []
-        actions.extend(self.legal_actions_pos(self.player[0]))
+        if self._legal_actions_cache is not None:
+            return self._legal_actions_cache
+
+        actions = list(self.legal_actions_pos(self.player[0]))
 
         if self.player[1] > 0:
-            for pos in range((self.N - 1) ** 2):
-                actions.extend(self.legal_actions_wall(pos))
-                
+            cache_key = (tuple(self.walls), self.player[0], self.enemy[0])
+            if cache_key in _wall_actions_cache:
+                actions.extend(_wall_actions_cache[cache_key])
+            else:
+                wall_actions = []
+                for pos in range((self.N - 1) ** 2):
+                    wall_actions.extend(self.legal_actions_wall(pos))
+                if len(_wall_actions_cache) < 300_000:
+                    _wall_actions_cache[cache_key] = wall_actions
+                actions.extend(wall_actions)
+
+        self._legal_actions_cache = actions
         return actions
 
     def legal_actions_pos(self, pos):
@@ -302,40 +469,19 @@ class State:
             return True
 
         def can_reach_goal(orientation, pos):
-            def bfs(state):
-                queue = deque([state.player[0]])
-                visited = set()
-                while queue:
-                    pos = queue.popleft()
-                    nps = state.legal_actions_pos(pos)
-                    for np in nps:
-                        x, y = np // N, np % N
-                        if y == 0:
-                            return True
-                        if np not in visited:
-                            visited.add(np)
-                            queue.append(np)
-                return False
-
+            # Temporarily place wall, snapshot as tuple, then restore
             self.walls[pos] = orientation
-
-            player_state = State(board_size=N, player=self.player.copy(), enemy=self.enemy.copy(), walls=deepcopy(self.walls), depth=self.depth)
-
-            can_reach_player = bfs(player_state)
-
-            action = pos
-            if orientation == 1:
-                action += N ** 2
-            else:
-                action += N ** 2 + (N - 1) ** 2
-
-            enemy_state = player_state.next(action)
-
-            can_reach_enemy = bfs(enemy_state)
-
+            trial = tuple(self.walls)
             self.walls[pos] = 0
 
-            return can_reach_player and can_reach_enemy
+            # Player reachability with trial walls
+            h, v = _get_blocked_edges(N, trial)
+            if not _bfs_can_reach_row0(N, h, v, self.player[0]):
+                return False
+
+            # Enemy reachability with rotated trial walls (mirrors next() rotate_walls)
+            h_r, v_r = _get_blocked_edges(N, tuple(reversed(trial)))
+            return _bfs_can_reach_row0(N, h_r, v_r, self.enemy[0])
     
         actions = []
 
@@ -355,8 +501,8 @@ class State:
     
     def next(self, action):
         N = self.N
-        # Create the next state
-        state = State(board_size=N, player=self.player.copy(), enemy=self.enemy.copy(), walls=deepcopy(self.walls), depth=self.depth + 1)
+        # Create the next state, passing position history
+        state = State(board_size=N, player=self.player.copy(), enemy=self.enemy.copy(), walls=deepcopy(self.walls), depth=self.depth + 1, pos_counts=self._pos_counts)
 
         if action < N ** 2:
             # Move piece
@@ -376,6 +522,9 @@ class State:
 
         # Swap players
         state.player, state.enemy = state.enemy, state.player
+
+        # Register position after all mutations are done
+        state._register_position()
 
         return state
     

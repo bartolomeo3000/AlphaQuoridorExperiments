@@ -3,76 +3,94 @@
 # ====================
 
 # Importing packages
-from tensorflow.keras.layers import Activation, Add, BatchNormalization, Conv2D, Dense, GlobalAveragePooling2D, Input
-from tensorflow.keras.models import Model
-from tensorflow.keras.regularizers import l2
-from tensorflow.keras import backend as K
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
 import os
 
-# Preparing parameters
-DN_FILTERS  = 128  # Number of kernels in the convolutional layer (256 in the original version)
-DN_RESIDUAL_NUM =  16  # Number of residual blocks (19 in the original version)
-DN_INPUT_SHAPE = (3, 3, 6)  # Input shape
-DN_OUTPUT_SIZE = 9 + 4 * 2  # Number of actions (placement locations (3*3)) 
+# Device selection — uses CUDA GPU if available, otherwise CPU
+DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-# Creating the convolutional layer
-def conv(filters):
-    return Conv2D(filters, 3, padding='same', use_bias=False,
-        kernel_initializer='he_normal', kernel_regularizer=l2(0.0005))
+from config import (
+    USE_BFS_CHANNELS, MODEL_DIR, DATA_DIR,
+    DN_FILTERS, DN_RESIDUAL_NUM,
+)
 
-# Creating the residual block
-def residual_block():
-    def f(x):
+DN_INPUT_SHAPE = (7, 7, 8) if USE_BFS_CHANNELS else (7, 7, 6)  # (H, W, C)
+DN_OUTPUT_SIZE = 7**2 + 2*(7-1)**2  # 49 positions + 36 h-walls + 36 v-walls = 121 actions
+
+
+# Residual block
+class ResidualBlock(nn.Module):
+    def __init__(self, filters):
+        super().__init__()
+        self.conv1 = nn.Conv2d(filters, filters, 3, padding=1, bias=False)
+        self.bn1   = nn.BatchNorm2d(filters)
+        self.conv2 = nn.Conv2d(filters, filters, 3, padding=1, bias=False)
+        self.bn2   = nn.BatchNorm2d(filters)
+        nn.init.kaiming_normal_(self.conv1.weight, nonlinearity='relu')
+        nn.init.kaiming_normal_(self.conv2.weight, nonlinearity='relu')
+
+    def forward(self, x):
         sc = x
-        x = conv(DN_FILTERS)(x)
-        x = BatchNormalization()(x)
-        x = Activation('relu')(x)
-        x = conv(DN_FILTERS)(x)
-        x = BatchNormalization()(x)
-        x = Add()([x, sc])
-        x = Activation('relu')(x)
-        return x
-    return f
+        x = F.relu(self.bn1(self.conv1(x)))
+        x = self.bn2(self.conv2(x))
+        return F.relu(x + sc)
 
-# Creating the dual network
+
+# Dual network: shared trunk -> policy head + value head
+class DualNetwork(nn.Module):
+    def __init__(self):
+        super().__init__()
+        in_ch = DN_INPUT_SHAPE[2]  # 6 input channels
+
+        self.conv = nn.Conv2d(in_ch, DN_FILTERS, 3, padding=1, bias=False)
+        nn.init.kaiming_normal_(self.conv.weight, nonlinearity='relu')
+        self.bn = nn.BatchNorm2d(DN_FILTERS)
+
+        self.residuals = nn.Sequential(
+            *[ResidualBlock(DN_FILTERS) for _ in range(DN_RESIDUAL_NUM)]
+        )
+
+        self.pool = nn.AdaptiveAvgPool2d(1)
+
+        self.policy_head = nn.Linear(DN_FILTERS, DN_OUTPUT_SIZE)
+        self.value_head  = nn.Linear(DN_FILTERS, 1)
+
+    def forward(self, x):
+        # x: (N, C, H, W)
+        x = F.relu(self.bn(self.conv(x)))
+        x = self.residuals(x)
+        x = self.pool(x).view(x.size(0), -1)  # flatten to (N, DN_FILTERS)
+        p = F.softmax(self.policy_head(x), dim=1)
+        v = torch.tanh(self.value_head(x))
+        return p, v
+
+
+# Save model weights to disk
+def save_model(model, path):
+    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+    torch.save(model.state_dict(), path)
+
+
+# Load model weights from disk and move to DEVICE
+def load_model(path):
+    model = DualNetwork().to(DEVICE)
+    model.load_state_dict(torch.load(path, map_location=DEVICE))
+    return model
+
+
+# Create and save a fresh network if one doesn't already exist
 def dual_network():
-    # Do nothing if the model is already created
-    if os.path.exists('./model/best.keras'):
+    best_path = os.path.join(MODEL_DIR, 'best.pt')
+    if os.path.exists(best_path):
         return
 
-    # Input layer
-    input = Input(shape=DN_INPUT_SHAPE)
-
-    # Convolutional layer
-    x = conv(DN_FILTERS)(input)
-    x = BatchNormalization()(x)
-    x = Activation('relu')(x)
-
-    # Residual blocks x 16
-    for i in range(DN_RESIDUAL_NUM):
-        x = residual_block()(x)
-
-    # Pooling layer
-    x = GlobalAveragePooling2D()(x)
-
-    # Policy output
-    p = Dense(DN_OUTPUT_SIZE, kernel_regularizer=l2(0.0005),
-              activation='softmax', name='pi')(x)
-
-    # Value output
-    v = Dense(1, kernel_regularizer=l2(0.0005))(x)
-    v = Activation('tanh', name='v')(v)
-
-    # Creating the model
-    model = Model(inputs=input, outputs=[p, v])
-
-    # Saving the model
-    os.makedirs('./model/', exist_ok=True)  # Create folder if it does not exist
-    model.save('./model/best.keras')  # Best player's model
-
-    # Clearing the model
-    K.clear_session()
+    model = DualNetwork()
+    os.makedirs(MODEL_DIR, exist_ok=True)
+    save_model(model, best_path)
     del model
+
 
 # Running the function
 if __name__ == '__main__':

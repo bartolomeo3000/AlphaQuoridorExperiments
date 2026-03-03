@@ -1,11 +1,15 @@
 # Importing necessary packages and modules
+import os
 from game import State
 from pv_mcts import pv_mcts_action, random_action
-from tensorflow.keras.models import load_model
+from dual_network import load_model
+from config import MODEL_DIR
 import tkinter as tk
+import pv_mcts
+pv_mcts.PV_EVALUATE_COUNT = 2000  # stronger play vs human; training stays at 200
 
 # Loading the best player's model
-model = load_model('./model/best.keras')
+model = load_model(os.path.join(MODEL_DIR, 'best.pt'))
 
 # Defining the Game UI
 class GameUI(tk.Frame):
@@ -17,8 +21,7 @@ class GameUI(tk.Frame):
         # Generating the game state
         self.state = State()
         self.N = self.state.N
-        self.D = 200  # Cell size (pixels)
-        self.L = self.N * self.D  # Canvas size
+        self.D = 80  # default cell size; updated dynamically on resize
 
         self.select = -1  # Selection (-1: none, 0~(N*N-1): square)
         self.placing_wall = False  # Flag to indicate if we are placing a wall
@@ -26,24 +29,29 @@ class GameUI(tk.Frame):
         # Creating the function for action selection using PV MCTS
         self.next_action = pv_mcts_action(model) if model else random_action()
 
-        # Main frame layout
-        self.grid()
+        # Make the frame fill the window
+        self.grid(sticky='nsew')
+        master.grid_rowconfigure(0, weight=1)
+        master.grid_columnconfigure(0, weight=1)
+        self.grid_rowconfigure(1, weight=1)
+        self.grid_columnconfigure(1, weight=1)
 
-        # Creating the canvas for the game board
-        self.c = tk.Canvas(self, width=self.L, height=self.L, highlightthickness=0)
+        # Creating the canvas for the game board — no fixed size, expands with window
+        self.c = tk.Canvas(self, highlightthickness=0, bg='#4B4B4B')
         self.c.bind('<Button-1>', self.turn_of_human)
-        self.c.grid(row=1, column=1, padx=10, pady=10)
+        self.c.bind('<Configure>', self._on_resize)
+        self.c.grid(row=1, column=1, padx=10, pady=10, sticky='nsew')
 
         # Displaying the player's walls on the left
         self.player_walls_frame = tk.Frame(self)
         self.player_walls_frame.grid(row=1, column=2, padx=10, pady=10)
-        self.player_walls = tk.Label(self.player_walls_frame, text="Player Walls", anchor="center", justify=tk.CENTER, font=('Helvetica', 24))
+        self.player_walls = tk.Label(self.player_walls_frame, text="Player Walls", anchor="center", justify=tk.CENTER, font=('Helvetica', 14))
         self.player_walls.pack()
 
         # Displaying the enemy's walls on the right
         self.enemy_walls_frame = tk.Frame(self)
         self.enemy_walls_frame.grid(row=1, column=0, padx=10, pady=10)
-        self.enemy_walls = tk.Label(self.enemy_walls_frame, text="Enemy Walls", anchor="center", justify=tk.CENTER, font=('Helvetica', 24))
+        self.enemy_walls = tk.Label(self.enemy_walls_frame, text="Enemy Walls", anchor="center", justify=tk.CENTER, font=('Helvetica', 14))
         self.enemy_walls.pack()
 
         # Displaying the action buttons below the game board
@@ -59,10 +67,22 @@ class GameUI(tk.Frame):
         self.wall_vertical_button.pack()
 
         # Result message
-        self.result_message = tk.Label(self, text="", font=('Helvetica', 60))
+        self.result_message = tk.Label(self, text="", font=('Helvetica', 24))
         self.result_message.grid(row=0, column=1, pady=10)
 
+        # Set a sensible initial window size (60% of screen, square-ish)
+        screen_w = master.winfo_screenwidth()
+        screen_h = master.winfo_screenheight()
+        init = min(int(screen_w * 0.6), int(screen_h * 0.8))
+        master.geometry(f'{init}x{int(init * 0.85)}')
+
         # Updating the drawing
+        self.on_draw()
+
+    def _on_resize(self, event):
+        """Recompute cell size from actual canvas dimensions and redraw."""
+        board_px = min(event.width, event.height)
+        self.D = max(20, board_px // self.N)
         self.on_draw()
 
     def place_wall_mode(self):
@@ -86,7 +106,10 @@ class GameUI(tk.Frame):
             x, y = (event.x - D // 2) // D, (event.y - D // 2) // D
             print(x, y)
             if 0 <= x < N - 1 and 0 <= y < N - 1:
-                self.place_wall(x, y)
+                if not self.place_wall(x, y):
+                    return  # illegal wall — don't give AI a free turn
+            else:
+                return  # click out of bounds — ignore
         else:
             x, y = event.x // D, event.y // D
             self.select = N * y + x
@@ -123,10 +146,10 @@ class GameUI(tk.Frame):
             self.placing_wall = False
             self.wall_button.config(text="Place Wall")
             self.on_draw()
+            return True  # legal — AI should take its turn
         else:
-            self.placing_wall = False
-            self.wall_button.config(text="Place Wall")
             self.on_draw()
+            return False  # illegal — human retries, AI does not move
 
     # AI's turn
     def turn_of_ai(self):
@@ -149,6 +172,9 @@ class GameUI(tk.Frame):
             return
 
     def display_result(self):
+        if self.state.is_draw():
+            self.result_message.config(text="Draw", fg="gray")
+            return
         is_lose = self.state.is_lose() if self.state.is_first_player() else not self.state.is_lose()
         if is_lose:
             self.result_message.config(text="You Lose", fg="blue")
@@ -178,25 +204,25 @@ class GameUI(tk.Frame):
             if self.state.walls[i] == 1:
                 x1, y1 = x * D, (y + 1) * D
                 x2, y2 = (x + 2) * D, (y + 1) * D
-                self.c.create_line(x1, y1, x2, y2, width=16.0, fill='#D1B575')
+                self.c.create_line(x1, y1, x2, y2, width=max(4, D // 12), fill='#D1B575')
             elif self.state.walls[i] == 2:
                 x1, y1 = (x + 1) * D, y * D
                 x2, y2 = (x + 1) * D, (y + 2) * D
-                self.c.create_line(x1, y1, x2, y2, width=16.0, fill='#D1B575')
+                self.c.create_line(x1, y1, x2, y2, width=max(4, D // 12), fill='#D1B575')
 
     # Update the drawing
     def on_draw(self):
         N = self.N
         D = self.D
-        L = self.L
+        L = N * D
         is_first_player = self.state.is_first_player()
 
         # Grid
         self.c.delete('all')
         self.c.create_rectangle(0, 0, L, L, width=0.0, fill='#4B4B4B')
         for i in range(1, N):
-            self.c.create_line(i * D, 0, i * D, L, width=16.0, fill='#8B0000')
-            self.c.create_line(0, i * D, L, i * D, width=16.0, fill='#8B0000')
+            self.c.create_line(i * D, 0, i * D, L, width=max(4, D // 12), fill='#8B0000')
+            self.c.create_line(0, i * D, L, i * D, width=max(4, D // 12), fill='#8B0000')
 
         # Pieces
         p_pos = self.state.player[0] if is_first_player else self.state.enemy[0]
@@ -224,6 +250,7 @@ class GameUI(tk.Frame):
 
 # Run the game UI
 if __name__ == '__main__':
-    f = GameUI(model=model)
+    root = tk.Tk()
+    f = GameUI(master=root, model=model)
     f.pack()
     f.mainloop()

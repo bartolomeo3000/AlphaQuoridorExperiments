@@ -1,0 +1,14 @@
+{
+    "python.defaultInterpreterPath": "c:\\Users\\antib\\GitHubRepos\\AlphaQuoridor\\.venv\\Scripts\\python.exe",
+    "jupyter.kernels.filter": [],
+    "jupyter.kernels.trusted": [
+        "c:\\Users\\antib\\GitHubRepos\\AlphaQuoridor\\.venv\\Scripts\\python.exe"
+    ],
+    "remote.extensionKind": {
+        "ms-python.python": ["workspace"],
+        "ms-python.vscode-pylance": ["workspace"],
+        "ms-toolsai.jupyter": ["workspace"],
+        "ms-toolsai.jupyter-keymap": ["workspace"],
+        "ms-toolsai.jupyter-renderers": ["workspace"]
+    }
+}

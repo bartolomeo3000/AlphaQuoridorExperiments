@@ -4,33 +4,47 @@
 
 # Import packages
 from game import State
-from dual_network import DN_INPUT_SHAPE
+from dual_network import DN_INPUT_SHAPE, load_model
 from math import sqrt
-from tensorflow.keras.models import load_model
 from pathlib import Path
 import numpy as np
+import torch
 from copy import deepcopy
 import random
 
-# Prepare parameters
-PV_EVALUATE_COUNT = 50 # Number of simulations per inference (original is 1600)
+from config import (
+    PV_EVALUATE_COUNT, DIRICHLET_ALPHA, DIRICHLET_EPSILON, POSITION_PRIOR_BOOST,
+)
 
 # Inference
 def predict(model, state):
-    # Reshape input data for inference
-    a, b, c = DN_INPUT_SHAPE
-    x = np.array(state.pieces_array())
-    x = x.reshape(c, a, b).transpose(1, 2, 0).reshape(1, a, b, c)
+    # Reshape input data for inference — PyTorch uses NCHW (N, C, H, W)
+    a, b, c = DN_INPUT_SHAPE  # a=H=3, b=W=3, c=C=6
+    x = np.array(state.pieces_array(), dtype=np.float32).reshape(c, a, b)  # (C, H, W)
+    x = torch.from_numpy(x).unsqueeze(0)  # (1, C, H, W)
+    device = next(model.parameters()).device
+    x = x.to(device)
 
-    # Inference
-    y = model.predict(x, batch_size=1)
+    model.eval()
+    with torch.no_grad():
+        p, v = model(x)
 
-    # Get policy
-    policies = y[0][0][list(state.legal_actions())] # Only legal moves
-    policies /= np.sum(policies) if np.sum(policies) else 1 # Convert to a probability distribution summing to 1
+    # Get policy — only legal moves
+    legal = list(state.legal_actions())
+    policies = p[0].cpu().numpy()[legal]
+
+    # Boost prior probability of position moves to compensate for wall actions
+    # dominating the action space numerically
+    if POSITION_PRIOR_BOOST != 1.0:
+        N = state.N
+        for i, action in enumerate(legal):
+            if action < N * N:
+                policies[i] *= POSITION_PRIOR_BOOST
+
+    policies /= np.sum(policies) if np.sum(policies) else 1  # normalise to sum to 1
 
     # Get value
-    value = y[1][0][0]
+    value = v[0][0].cpu().item()
     return policies, value
 
 # Convert list of nodes to list of scores
@@ -41,7 +55,7 @@ def nodes_to_scores(nodes):
     return scores
 
 # Get Monte Carlo Tree Search scores
-def pv_mcts_scores(model, state, temperature):
+def pv_mcts_scores(model, state, temperature, add_noise=False, use_q_selection=False):
     # Define Monte Carlo Tree Search node
     class Node:
         # Initialize node
@@ -105,24 +119,47 @@ def pv_mcts_scores(model, state, temperature):
     # Create a node for the current state
     root_node = Node(state, 0)
 
-    # Perform multiple evaluations
-    for _ in range(PV_EVALUATE_COUNT):
+    # Force root expansion so we can inject noise into child priors before searching
+    root_node.evaluate()
+
+    # Dirichlet noise: encourages exploration at the root during self-play
+    if add_noise and root_node.child_nodes:
+        noise = np.random.dirichlet([DIRICHLET_ALPHA] * len(root_node.child_nodes))
+        for child, n in zip(root_node.child_nodes, noise):
+            child.p = (1 - DIRICHLET_EPSILON) * child.p + DIRICHLET_EPSILON * n
+
+    # Perform remaining evaluations
+    for _ in range(PV_EVALUATE_COUNT - 1):
         root_node.evaluate()
 
     # Probability distribution of legal moves
     scores = nodes_to_scores(root_node.child_nodes)
-    if temperature == 0: # Only the maximum value is 1
-        action = np.argmax(scores)
+    if temperature == 0:
+        if use_q_selection:
+            # Select by highest Q value (mean backed-up value, no exploration bonus).
+            # Unvisited children (n=0) get -inf so they are never chosen over visited ones.
+            q_values = [(-c.w / c.n if c.n else -float('inf')) for c in root_node.child_nodes]
+            action = np.argmax(q_values)
+        else:
+            # Default: select most-visited child (standard AlphaZero)
+            action = np.argmax(scores)
         scores = np.zeros(len(scores))
         scores[action] = 1
-    else: # Add variation with Boltzmann distribution
+    else: # Add variation with Boltzmann distribution over visit counts
         scores = boltzman(scores, temperature)
     return scores
 
 # Action selection with Monte Carlo Tree Search
-def pv_mcts_action(model, temperature=0):
+def pv_mcts_action(model, temperature=0, add_noise=False, temp_cutoff=None, use_q_selection=False):
+    move_count = [0]  # mutable counter shared in closure
     def pv_mcts_action(state):
-        scores = pv_mcts_scores(model, deepcopy(state), temperature)
+        if temp_cutoff is not None and move_count[0] >= temp_cutoff:
+            t = 0
+        else:
+            t = temperature
+        move_count[0] += 1
+        scores = pv_mcts_scores(model, deepcopy(state), t, add_noise=add_noise,
+                                use_q_selection=use_q_selection)
 
         return np.random.choice(state.legal_actions(), p=scores)
     return pv_mcts_action
@@ -143,7 +180,7 @@ def random_action():
 # Confirm operation
 if __name__ == '__main__':
     # Load model
-    path = sorted(Path('./model').glob('*.keras'))[-1]
+    path = sorted(Path('./model').glob('*.pt'))[-1]
     model = load_model(str(path))
 
     # Generate state
