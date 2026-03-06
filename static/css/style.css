@@ -1,0 +1,502 @@
+/* ===================================================
+   AlphaQuoridor Web Dashboard — Dark Theme
+   =================================================== */
+
+:root {
+  --bg:         #0f1117;
+  --bg2:        #1a1d27;
+  --bg3:        #242736;
+  --border:     #2e3248;
+  --accent:     #7c6af7;
+  --accent2:    #5ee8c0;
+  --text:       #e2e5f0;
+  --text-dim:   #8890ab;
+  --win:        #4caf7d;
+  --loss:       #e05c6a;
+  --draw:       #e0a84a;
+  --cell-size:  64px;
+  --wall-size:  8px;
+  --board-gap:  4px;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  font-size: 15px;
+  line-height: 1.5;
+  min-height: 100vh;
+}
+
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* ── Navbar ─────────────────────────────────────── */
+nav.topnav {
+  background: var(--bg2);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 0;
+  padding: 0 20px;
+  height: 52px;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+nav.topnav .brand {
+  font-weight: 700;
+  font-size: 1.1rem;
+  color: var(--accent);
+  margin-right: 28px;
+  letter-spacing: 0.02em;
+}
+
+nav.topnav a {
+  color: var(--text-dim);
+  padding: 0 14px;
+  height: 52px;
+  display: flex;
+  align-items: center;
+  font-size: 0.9rem;
+  transition: color 0.15s;
+  border-bottom: 3px solid transparent;
+}
+
+nav.topnav a:hover { color: var(--text); text-decoration: none; }
+nav.topnav a.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+/* ── Page Layout ────────────────────────────────── */
+.page { padding: 28px 32px; max-width: 1400px; margin: 0 auto; }
+.page-title {
+  font-size: 1.35rem;
+  font-weight: 700;
+  margin-bottom: 20px;
+  color: var(--text);
+}
+
+/* ── Cards ──────────────────────────────────────── */
+.card {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 20px 22px;
+  margin-bottom: 18px;
+}
+
+.card-title {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 14px;
+}
+
+/* ── Stats Summary ──────────────────────────────── */
+.stats-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.stat-chip {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 18px;
+  min-width: 130px;
+}
+
+.stat-chip .label {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.stat-chip .value {
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: var(--accent2);
+  margin-top: 2px;
+}
+
+/* ── Charts Grid ────────────────────────────────── */
+.charts-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
+  gap: 18px;
+}
+
+.chart-card {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px 18px;
+}
+
+.chart-card h3 {
+  font-size: 0.85rem;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 10px;
+}
+
+.chart-card canvas { width: 100% !important; }
+
+/* ── Quoridor Board ─────────────────────────────── */
+.board-wrap {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  user-select: none;
+}
+
+canvas#board {
+  cursor: pointer;
+  border-radius: 6px;
+  display: block;
+}
+
+/* ── Replay Controls ────────────────────────────── */
+.replay-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+.replay-controls button,
+.btn {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 6px 16px;
+  font-size: 0.88rem;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.replay-controls button:hover,
+.btn:hover { background: var(--border); }
+
+.btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.btn-primary:hover { background: #6a58e0; border-color: #6a58e0; }
+
+.btn-danger {
+  background: var(--loss);
+  border-color: var(--loss);
+  color: #fff;
+}
+
+/* ── Game result badges ─────────────────────────── */
+.badge {
+  display: inline-block;
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.badge-win  { background: #1a4a30; color: var(--win); }
+.badge-loss { background: #4a1a22; color: var(--loss); }
+.badge-draw { background: #4a3a12; color: var(--draw); }
+
+/* ── Game list ──────────────────────────────────── */
+.game-list {
+  list-style: none;
+  max-height: 420px;
+  overflow-y: auto;
+}
+
+.game-list li {
+  padding: 8px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.88rem;
+  transition: background 0.1s;
+}
+
+.game-list li:hover { background: var(--bg3); }
+.game-list li.active { background: var(--border); }
+
+/* ── Selects / Inputs ───────────────────────────── */
+select, input[type=number], input[type=range] {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 5px 10px;
+  font-size: 0.88rem;
+  outline: none;
+}
+
+select:focus, input[type=number]:focus {
+  border-color: var(--accent);
+}
+
+input[type=range] {
+  padding: 0;
+  cursor: pointer;
+  accent-color: var(--accent);
+}
+
+/* ── Inspector Layout ───────────────────────────── */
+.inspect-layout {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 24px;
+  align-items: start;
+}
+
+.toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 180px;
+}
+
+.toolbar .tool-btn {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 8px 14px;
+  text-align: left;
+  cursor: pointer;
+  font-size: 0.88rem;
+  transition: background 0.1s, border-color 0.1s;
+}
+
+.toolbar .tool-btn:hover { background: var(--border); }
+.toolbar .tool-btn.active {
+  border-color: var(--accent);
+  background: rgba(124, 106, 247, 0.18);
+  color: var(--accent);
+}
+
+.toolbar label {
+  font-size: 0.8rem;
+  color: var(--text-dim);
+  margin-top: 4px;
+}
+
+/* ── Heatmap Grid ───────────────────────────────── */
+.heatmap-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 14px;
+  margin-top: 18px;
+}
+
+.heatmap-card {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  text-align: center;
+}
+
+.heatmap-card h4 {
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 8px;
+}
+
+.heatmap-card canvas {
+  display: block;
+  margin: 0 auto;
+  border-radius: 4px;
+}
+
+/* ── Policy strip ───────────────────────────────── */
+.policy-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 10px;
+}
+
+.policy-bar {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  font-size: 0.7rem;
+  color: var(--text-dim);
+  min-width: 36px;
+}
+
+.policy-bar .bar-inner {
+  width: 28px;
+  background: var(--accent);
+  border-radius: 3px 3px 0 0;
+}
+
+.policy-bar.top-action .bar-inner { background: var(--accent2); }
+
+/* ── Value display ──────────────────────────────── */
+.value-display {
+  font-size: 2.4rem;
+  font-weight: 800;
+  text-align: center;
+  margin: 10px 0;
+  color: var(--accent2);
+}
+
+/* ── Logs page ──────────────────────────────────── */
+.log-terminal {
+  background: #09090e;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px 16px;
+  font-family: 'Cascadia Code', 'Fira Mono', 'Consolas', monospace;
+  font-size: 0.8rem;
+  line-height: 1.6;
+  height: calc(100vh - 160px);
+  overflow-y: auto;
+  color: #c8d0e8;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.log-terminal .log-cycle {
+  color: #e0c050;
+  font-weight: 700;
+}
+
+.log-terminal .log-error {
+  color: var(--loss);
+}
+
+.log-terminal .log-timing {
+  color: #7ad4b8;
+}
+
+/* ── Spinner ────────────────────────────────────── */
+.spinner {
+  display: inline-block;
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  vertical-align: middle;
+  margin-left: 8px;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.hidden { display: none !important; }
+
+/* ── Play layout ────────────────────────────────── */
+.play-layout {
+  display: grid;
+  grid-template-columns: auto 320px;
+  gap: 24px;
+  align-items: start;
+}
+
+.play-info {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 18px;
+}
+
+.play-info h3 {
+  font-size: 0.85rem;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 12px;
+}
+
+.turn-indicator {
+  font-size: 1rem;
+  font-weight: 700;
+  padding: 8px 16px;
+  border-radius: 6px;
+  margin-bottom: 12px;
+  text-align: center;
+}
+
+.turn-human { background: rgba(94, 232, 192, 0.15); color: var(--accent2); }
+.turn-ai    { background: rgba(124, 106, 247, 0.15); color: var(--accent); }
+.turn-done  { background: rgba(224, 92, 106, 0.15); color: var(--loss); }
+
+.wall-toggle {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.wall-toggle button {
+  flex: 1;
+  padding: 6px 8px;
+  font-size: 0.82rem;
+}
+
+/* ── Replay layout ──────────────────────────────── */
+.replay-layout {
+  display: grid;
+  grid-template-columns: 220px auto 1fr;
+  gap: 20px;
+  align-items: start;
+}
+
+.sidebar {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px;
+}
+
+.sidebar h3 {
+  font-size: 0.8rem;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 10px;
+}
+
+/* ── Misc utilities ─────────────────────────────── */
+.flex { display: flex; }
+.flex-col { display: flex; flex-direction: column; }
+.gap-10 { gap: 10px; }
+.gap-16 { gap: 16px; }
+.mt-10 { margin-top: 10px; }
+.mt-16 { margin-top: 16px; }
+.text-dim { color: var(--text-dim); }
+.text-accent { color: var(--accent); }
+.text-accent2 { color: var(--accent2); }
+.font-mono { font-family: monospace; }
+
+/* Scrollbar styling */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #445; }

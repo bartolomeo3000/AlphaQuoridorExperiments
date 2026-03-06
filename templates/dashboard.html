@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+
+{% block head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+{% endblock %}
+
+{% block content %}
+<h1 class="page-title">Training Dashboard</h1>
+
+<div id="summary" class="stats-grid">
+  <div class="stat-chip"><div class="label">Cycles</div><div class="value" id="s-cycles">—</div></div>
+  <div class="stat-chip"><div class="label">Latest Cycle</div><div class="value" id="s-latest">—</div></div>
+  <div class="stat-chip"><div class="label">Eval Score</div><div class="value" id="s-eval">—</div></div>
+  <div class="stat-chip"><div class="label">Total Loss</div><div class="value" id="s-loss">—</div></div>
+  <div class="stat-chip"><div class="label">vs BFS</div><div class="value" id="s-bfs">—</div></div>
+  <div class="stat-chip"><div class="label">vs Greedy</div><div class="value" id="s-greedy">—</div></div>
+  <div class="stat-chip"><div class="label">Avg Game Len</div><div class="value" id="s-gamelen">—</div></div>
+  <div class="stat-chip"><div class="label">Opening Entropy</div><div class="value" id="s-entropy">—</div></div>
+</div>
+
+<div class="charts-grid">
+  <div class="chart-card"><h3>Self-Play Outcomes (%)</h3><canvas id="c-outcomes"></canvas></div>
+  <div class="chart-card"><h3>Opening Entropy &amp; Top-1 Freq</h3><canvas id="c-entropy"></canvas></div>
+  <div class="chart-card"><h3>Avg Game Length &amp; Walls Placed</h3><canvas id="c-gamelen"></canvas></div>
+  <div class="chart-card"><h3>Eval Score vs Best</h3><canvas id="c-eval"></canvas></div>
+  <div class="chart-card"><h3>Training Loss</h3><canvas id="c-loss"></canvas></div>
+  <div class="chart-card"><h3>Benchmark Win Rate</h3><canvas id="c-bench"></canvas></div>
+  <div class="chart-card"><h3>Cycle Timing (min)</h3><canvas id="c-timing"></canvas></div>
+</div>
+
+<p class="text-dim mt-10" style="font-size:0.8rem">
+  Auto-refreshes every 30 s &nbsp;·&nbsp; Last updated: <span id="last-updated">—</span>
+</p>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/dashboard.js"></script>
+{% endblock %}

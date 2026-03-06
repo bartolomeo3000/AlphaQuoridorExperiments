@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{% block title %}AlphaQuoridor{% endblock %} — Dashboard</title>
+  <link rel="stylesheet" href="/static/css/style.css" />
+  {% block head %}{% endblock %}
+</head>
+<body>
+
+<nav class="topnav">
+  <span class="brand">♟ AlphaQuoridor</span>
+  <a href="/"       class="{{ 'active' if request.path == '/'       }}">Dashboard</a>
+  <a href="/replay" class="{{ 'active' if request.path == '/replay' }}">Replay</a>
+  <a href="/play"   class="{{ 'active' if request.path == '/play'   }}">Play</a>
+  <a href="/inspect"class="{{ 'active' if request.path == '/inspect'}}">Inspect</a>
+  <a href="/logs"   class="{{ 'active' if request.path == '/logs'   }}">Logs</a>
+</nav>
+
+<div class="page">
+  {% block content %}{% endblock %}
+</div>
+
+<!-- Shared JS -->
+<script src="/static/js/board.js"></script>
+<script src="/static/js/game_state.js"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

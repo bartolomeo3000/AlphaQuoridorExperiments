@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Replay{% endblock %}
+
+{% block content %}
+<h1 class="page-title">Eval Game Replay</h1>
+
+<div class="replay-layout">
+  <!-- Sidebar: cycle + game selector -->
+  <div class="sidebar">
+    <h3>Cycle</h3>
+    <select id="cycle-select" style="width:100%;margin-bottom:12px">
+      <option value="">— pick cycle —</option>
+    </select>
+
+    <h3>Games</h3>
+    <ul class="game-list" id="game-list"></ul>
+  </div>
+
+  <!-- Board -->
+  <div class="board-wrap">
+    <canvas id="board"></canvas>
+    <div class="replay-controls">
+      <button id="btn-prev">◀ Prev</button>
+      <button id="btn-play" style="min-width:80px">▶ Play</button>
+      <button id="btn-next">Next ▶</button>
+      <span class="text-dim" style="font-size:0.82rem">Speed:</span>
+      <input type="range" id="speed-slider" min="1" max="10" value="4" style="width:90px">
+      <span class="text-dim font-mono" id="step-label" style="font-size:0.82rem">— / —</span>
+    </div>
+  </div>
+
+  <!-- Game info panel -->
+  <div style="min-width:200px">
+    <div class="card">
+      <div class="card-title">Current Game</div>
+      <div id="game-info" class="text-dim" style="font-size:0.88rem">Select a game to replay.</div>
+    </div>
+    <div class="card mt-10">
+      <div class="card-title">Move Info</div>
+      <div id="move-info" class="font-mono text-dim" style="font-size:0.82rem">—</div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/replay.js"></script>
+{% endblock %}

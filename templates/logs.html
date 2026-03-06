@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Logs{% endblock %}
+
+{% block content %}
+<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+  <h1 class="page-title" style="margin:0">Live Logs</h1>
+  <div style="display:flex;align-items:center;gap:12px">
+    <span id="sse-status" class="text-dim" style="font-size:0.82rem">● Disconnected</span>
+    <button class="btn" onclick="clearLog()">Clear</button>
+    <label style="display:flex;align-items:center;gap:6px;font-size:0.82rem;color:var(--text-dim);cursor:pointer">
+      <input type="checkbox" id="autoscroll" checked> Auto-scroll
+    </label>
+  </div>
+</div>
+
+<div class="log-terminal" id="log-terminal"></div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/logs.js"></script>
+{% endblock %}

@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}Inspect{% endblock %}
+
+{% block content %}
+<h1 class="page-title">Position Inspector</h1>
+
+<div class="inspect-layout">
+  <!-- Toolbar + Board -->
+  <div>
+    <div class="toolbar" style="margin-bottom:14px">
+      <div style="font-size:0.78rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">Edit Tool</div>
+      <button class="tool-btn active" id="tool-move-p1"   onclick="setTool('move-p1')" >Place P1 (green)</button>
+      <button class="tool-btn"        id="tool-move-p2"   onclick="setTool('move-p2')" >Place P2 (blue)</button>
+      <button class="tool-btn"        id="tool-hwall"     onclick="setTool('hwall')"   >Place H-Wall</button>
+      <button class="tool-btn"        id="tool-vwall"     onclick="setTool('vwall')"   >Place V-Wall</button>
+      <button class="tool-btn"        id="tool-rmwall"    onclick="setTool('rmwall')"  >Remove Wall</button>
+
+      <hr style="border-color:var(--border);margin:10px 0">
+      <div style="font-size:0.78rem;color:var(--text-dim);margin-bottom:4px">Walls remaining</div>
+      <label class="text-dim" style="font-size:0.8rem">P1 walls</label>
+      <input type="number" id="p1-walls-in" value="5" min="0" max="10" style="width:80px">
+      <label class="text-dim" style="font-size:0.8rem">P2 walls</label>
+      <input type="number" id="p2-walls-in" value="5" min="0" max="10" style="width:80px">
+      <label class="text-dim" style="font-size:0.8rem">Depth (0=P1 turn)</label>
+      <input type="number" id="depth-in" value="0" min="0" max="400" style="width:80px">
+
+      <hr style="border-color:var(--border);margin:10px 0">
+      <button class="btn btn-primary" onclick="analyze()">Analyze ▶</button>
+      <button class="btn" onclick="resetBoard()" style="margin-top:6px">Reset Board</button>
+      <button class="btn" onclick="copyState()" style="margin-top:4px">Copy State JSON</button>
+    </div>
+  </div>
+
+  <!-- Board + results -->
+  <div>
+    <div class="board-wrap" style="margin-bottom:20px">
+      <canvas id="board"></canvas>
+    </div>
+
+    <!-- Analysis results (hidden until analyzed) -->
+    <div id="results" class="hidden">
+      <div style="display:flex;gap:24px;align-items:center;margin-bottom:16px;flex-wrap:wrap">
+        <div class="stat-chip">
+          <div class="label">Value Estimate (win prob)</div>
+          <div id="value-out" class="value">—</div>
+        </div>
+        <div class="stat-chip">
+          <div class="label">P1 BFS distance</div>
+          <div id="p1-bfs-out" class="value">—</div>
+        </div>
+        <div class="stat-chip">
+          <div class="label">P2 BFS distance</div>
+          <div id="p2-bfs-out" class="value">—</div>
+        </div>
+        <div class="stat-chip">
+          <div class="label">Legal actions</div>
+          <div id="legal-count-out" class="value">—</div>
+        </div>
+      </div>
+
+      <!-- Policy strip -->
+      <div class="card">
+        <div class="card-title">Policy (top 15 legal actions by prior)</div>
+        <div id="policy-strip" class="policy-strip"></div>
+      </div>
+
+      <!-- Channel heatmaps -->
+      <div class="card-title" style="margin-top:16px">Input Channels</div>
+      <div id="heatmap-grid" class="heatmap-grid"></div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/inspect.js"></script>
+{% endblock %}
