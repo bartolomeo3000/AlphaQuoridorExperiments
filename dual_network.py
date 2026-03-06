@@ -52,18 +52,33 @@ class DualNetwork(nn.Module):
             *[ResidualBlock(DN_FILTERS) for _ in range(DN_RESIDUAL_NUM)]
         )
 
-        self.pool = nn.AdaptiveAvgPool2d(1)
+        # Policy head: 1×1 conv (128→2) preserving spatial structure, then linear
+        self.policy_conv = nn.Conv2d(DN_FILTERS, 2, kernel_size=1, bias=False)
+        self.policy_bn   = nn.BatchNorm2d(2)
+        self.policy_fc   = nn.Linear(2 * 7 * 7, DN_OUTPUT_SIZE)
 
-        self.policy_head = nn.Linear(DN_FILTERS, DN_OUTPUT_SIZE)
-        self.value_head  = nn.Linear(DN_FILTERS, 1)
+        # Value head: 1×1 conv (128→1), then two-layer MLP
+        self.value_conv  = nn.Conv2d(DN_FILTERS, 1, kernel_size=1, bias=False)
+        self.value_bn    = nn.BatchNorm2d(1)
+        self.value_fc1   = nn.Linear(1 * 7 * 7, 64)
+        self.value_fc2   = nn.Linear(64, 1)
 
     def forward(self, x):
         # x: (N, C, H, W)
         x = F.relu(self.bn(self.conv(x)))
-        x = self.residuals(x)
-        x = self.pool(x).view(x.size(0), -1)  # flatten to (N, DN_FILTERS)
-        p = F.softmax(self.policy_head(x), dim=1)
-        v = torch.tanh(self.value_head(x))
+        x = self.residuals(x)                                   # (N, DN_FILTERS, 7, 7)
+
+        # Policy head — spatial structure preserved
+        p = F.relu(self.policy_bn(self.policy_conv(x)))         # (N, 2, 7, 7)
+        p = p.view(p.size(0), -1)                               # (N, 98)
+        p = F.softmax(self.policy_fc(p), dim=1)                 # (N, 121)
+
+        # Value head — spatial structure preserved
+        v = F.relu(self.value_bn(self.value_conv(x)))           # (N, 1, 7, 7)
+        v = v.view(v.size(0), -1)                               # (N, 49)
+        v = F.relu(self.value_fc1(v))                           # (N, 64)
+        v = torch.tanh(self.value_fc2(v))                       # (N, 1)
+
         return p, v
 
 

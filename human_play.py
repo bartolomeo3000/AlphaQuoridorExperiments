@@ -6,7 +6,7 @@ from dual_network import load_model
 from config import MODEL_DIR
 import tkinter as tk
 import pv_mcts
-pv_mcts.PV_EVALUATE_COUNT = 2000  # stronger play vs human; training stays at 200
+pv_mcts.PV_EVALUATE_COUNT = 800  # stronger play vs human; training stays at 200
 
 # Loading the best player's model
 model = load_model(os.path.join(MODEL_DIR, 'best.pt'))

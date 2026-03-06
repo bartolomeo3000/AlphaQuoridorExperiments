@@ -3,7 +3,7 @@
 # ====================
 
 # Import packages
-from game import State
+from game import State, _get_blocked_edges, _bfs_goal_distances
 from dual_network import DN_INPUT_SHAPE, load_model
 from math import sqrt
 from pathlib import Path
@@ -13,7 +13,7 @@ from copy import deepcopy
 import random
 
 from config import (
-    PV_EVALUATE_COUNT, DIRICHLET_ALPHA, DIRICHLET_EPSILON, POSITION_PRIOR_BOOST,
+    PV_EVALUATE_COUNT, DIRICHLET_ALPHA, DIRICHLET_EPSILON, POSITION_PRIOR_BOOST, BFS_MOVE_BOOST,
 )
 
 # Inference
@@ -35,11 +35,21 @@ def predict(model, state):
 
     # Boost prior probability of position moves to compensate for wall actions
     # dominating the action space numerically
+    N = state.N
     if POSITION_PRIOR_BOOST != 1.0:
-        N = state.N
         for i, action in enumerate(legal):
             if action < N * N:
                 policies[i] *= POSITION_PRIOR_BOOST
+
+    # Extra boost for the pawn move(s) that advance along the BFS-shortest path to goal
+    if BFS_MOVE_BOOST != 1.0:
+        walls_t = tuple(state.walls)
+        h_e, v_e = _get_blocked_edges(N, walls_t)       # cached — no recompute cost
+        dist = _bfs_goal_distances(N, h_e, v_e, 0)     # dist to row 0 = current player's goal
+        current_dist = dist[state.player[0]]
+        for i, action in enumerate(legal):
+            if action < N * N and dist[action] < current_dist:
+                policies[i] *= BFS_MOVE_BOOST
 
     policies /= np.sum(policies) if np.sum(policies) else 1  # normalise to sum to 1
 

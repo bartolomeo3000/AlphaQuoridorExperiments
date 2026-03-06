@@ -1,5 +1,3 @@
-pytorch
-multiprocessing
 numpy
 matplotlib
 pandas

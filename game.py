@@ -9,6 +9,8 @@ from collections import deque
 import copy
 from copy import deepcopy
 
+from config import DRAW_DEPTH
+
 # Global cache for expensive wall legality computation.
 # Key: (walls_tuple, player_pos, enemy_pos)  Value: list of legal wall action indices
 # Shared across all State instances — MCTS nodes with the same board config pay the BFS cost only once.
@@ -148,7 +150,6 @@ class State:
         self.enemy = enemy if enemy != None else [0] * 2
         self.walls = walls if walls != None else [0] * ((N - 1) ** 2)
         self.depth = depth
-        self.draw_depth = 200  # fallback depth limit
         self._legal_actions_cache = None  # computed once on first access
         self._pos_counts = dict(pos_counts) if pos_counts is not None else {}
         self._repetition_draw = False
@@ -177,19 +178,60 @@ class State:
 
     # Check if it's a draw
     def is_draw(self):
-        return self.depth >= self.draw_depth or self._repetition_draw
+        return self.depth >= DRAW_DEPTH or self._repetition_draw
     
     # Check if the game is over
     def is_done(self):
         return self.is_lose() or self.is_draw()
-    
+
+    def bfs_distances(self):
+        """Return (p_dist, e_dist): wall-aware BFS move-count to goal for each player.
+
+        p_dist — moves for current player to reach row 0 (their goal), using current walls.
+        e_dist — moves for enemy to reach row 0 (their goal), using ROTATED walls.
+
+        Walls must be rotated for the enemy because next() calls rotate_walls() before
+        swapping players — a wall near row 0 in the current frame is near row N-1 in
+        the enemy's frame (near their start, not their goal).  This mirrors exactly what
+        legal_actions_wall uses for enemy reachability checks.
+
+        Reuses _bfs_dist_cache populated by pieces_array(); computes on demand
+        if the entry isn't cached yet (e.g. called before pieces_array).
+        """
+        N = self.N
+        walls_t = tuple(self.walls)
+        walls_rot = tuple(reversed(walls_t))
+
+        # Current player: dist0 with current walls
+        if walls_t in _bfs_dist_cache:
+            dist0_curr = _bfs_dist_cache[walls_t][0]
+        else:
+            h, v = _get_blocked_edges(N, walls_t)
+            dist0_curr = _bfs_goal_distances(N, h, v, 0)
+            distN1     = _bfs_goal_distances(N, h, v, N - 1)
+            if len(_bfs_dist_cache) < 200_000:
+                _bfs_dist_cache[walls_t] = (dist0_curr, distN1)
+
+        # Enemy: dist0 with rotated walls (their perspective after next()'s rotate_walls)
+        if walls_rot in _bfs_dist_cache:
+            dist0_rot = _bfs_dist_cache[walls_rot][0]
+        else:
+            h_r, v_r = _get_blocked_edges(N, walls_rot)
+            dist0_rot  = _bfs_goal_distances(N, h_r, v_r, 0)
+            distN1_rot = _bfs_goal_distances(N, h_r, v_r, N - 1)
+            if len(_bfs_dist_cache) < 200_000:
+                _bfs_dist_cache[walls_rot] = (dist0_rot, distN1_rot)
+
+        return dist0_curr[self.player[0]], dist0_rot[self.enemy[0]]
+
     def pieces_array(self):
         N = self.N
-        def pieces_of(pieces):
+        def pieces_of(pieces, flip=False):
             tables = []
 
             table = [0] * (N ** 2)
-            table[pieces[0]] = 1
+            pos = N ** 2 - 1 - pieces[0] if flip else pieces[0]
+            table[pos] = 1
             tables.append(table)
                 
             table = [pieces[1]] * (N ** 2)
@@ -198,34 +240,15 @@ class State:
             return tables
         
         def walls_of(walls):
-            tables = []
-
-            table_h = [0] * (N ** 2)
-            table_v = [0] * (N ** 2)
-
-            for wp in range((N - 1) ** 2):
-                x, y = wp // (N - 1), wp % (N - 1)
-
-                if x < (N - 1) // 2 and y < (N - 1) // 2:
-                    pos = N * x + y
-                elif x > (N - 1) // 2 and y < (N - 1) // 2:
-                    pos = N * x + (y + 1)
-                elif x < (N - 1) // 2 and y > (N - 1) // 2:
-                    pos = N * (x + 1) + y
-                else:
-                    pos = N * (x + 1) + (y + 1)
-
-                if walls[wp] == 1:
-                    table_h[pos] = 1
-                elif walls[wp] == 2:
-                    table_v[pos] = 1
-                
-            tables.append(table_h)
-            tables.append(table_v)
-
-            return tables
+            # Use the engine's edge-blocking representation directly:
+            #   h[pos] = 1  →  moving UP   from cell pos is blocked
+            #   v[pos] = 1  →  moving LEFT from cell pos is blocked
+            # Each wall correctly marks the two cells whose edges it blocks,
+            # matching exactly what the movement/BFS logic uses.
+            h, v = _get_blocked_edges(N, tuple(walls))
+            return [list(h), list(v)]
         
-        result = [pieces_of(self.player), pieces_of(self.enemy), walls_of(self.walls)]
+        result = [pieces_of(self.player), pieces_of(self.enemy, flip=True), walls_of(self.walls)]
 
         from config import USE_BFS_CHANNELS
         if USE_BFS_CHANNELS:
@@ -233,8 +256,8 @@ class State:
             if walls_t not in _bfs_dist_cache:
                 h, v = _get_blocked_edges(N, walls_t)
                 entry = (
-                    _bfs_goal_distances(N, h, v, 0),      # current player's goal: row 0
-                    _bfs_goal_distances(N, h, v, N - 1),  # opponent's goal: row N-1
+                    _bfs_goal_distances(N, h, v, 0),      # ch7: dist to row 0  (current player's goal)
+                    _bfs_goal_distances(N, h, v, N - 1),  # ch8: dist to row N-1 (same walls, opposite direction)
                 )
                 if len(_bfs_dist_cache) < 200_000:
                     _bfs_dist_cache[walls_t] = entry

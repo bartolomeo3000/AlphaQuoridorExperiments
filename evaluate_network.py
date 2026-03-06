@@ -23,6 +23,7 @@ import multiprocessing as mp
 from config import (
     EN_GAME_COUNT, EN_TEMPERATURE, EN_TEMP_CUTOFF,
     EN_PROMOTE_THRESHOLD, EN_DRAW_DISTANCE_SCORING, DRAW_SHAPE_SCALE,
+    USE_BFS_CHANNELS,
 )
 
 # Persistent pool — created once, reused across all evaluation calls
@@ -42,9 +43,12 @@ def first_player_point(ended_state):
         return 0 if ended_state.is_first_player() else 1
     if EN_DRAW_DISTANCE_SCORING:
         N = ended_state.N
-        p_row = ended_state.player[0] // N
-        e_row = ended_state.enemy[0] // N
-        draw_val = DRAW_SHAPE_SCALE * (e_row - p_row) / (N - 1)
+        if USE_BFS_CHANNELS:
+            p_dist, e_dist = ended_state.bfs_distances()
+        else:
+            p_dist = ended_state.player[0] // N
+            e_dist = ended_state.enemy[0] // N
+        draw_val = DRAW_SHAPE_SCALE * (e_dist - p_dist) / (N - 1)
         if not ended_state.is_first_player():
             draw_val = -draw_val
         return 0.5 + draw_val
@@ -119,9 +123,12 @@ def _eval_worker(args):
         history.append([state.pieces_array(), policies, None])
 
         # Draw shaping value (zero-sum, same formula as self-play)
-        p_row = state.player[0] // N
-        e_row = state.enemy[0] // N
-        draw_values.append(DRAW_SHAPE_SCALE * (e_row - p_row) / (N - 1))
+        if USE_BFS_CHANNELS:
+            p_dist, e_dist = state.bfs_distances()
+        else:
+            p_dist = state.player[0] // N
+            e_dist = state.enemy[0] // N
+        draw_values.append(DRAW_SHAPE_SCALE * (e_dist - p_dist) / (N - 1))
 
         action = np.random.choice(state.legal_actions(), p=scores)
         state = state.next(action)

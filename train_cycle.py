@@ -10,6 +10,8 @@ from evaluate_network import evaluate_network
 from evaluate_best_player import evaluate_best_player
 from datetime import datetime
 import csv
+import glob
+import shutil
 import sys
 import os
 import time
@@ -41,6 +43,7 @@ NUM_TRAIN_CYCLE = 30
 _CSV_HEADERS = [
     'cycle', 'timestamp',
     'sp_W_pct', 'sp_D_pct', 'sp_L_pct', 'sp_positions', 'sp_unique', 'sp_entropy', 'sp_top1',
+    'sp_avg_game_len', 'sp_avg_walls',
     'loss', 'loss_policy', 'loss_value',
     'eval_score', 'promoted',
     'vs_random', 'vs_greedy', 'vs_bfs',
@@ -90,6 +93,15 @@ def _run(stats_path):
         t_tr = (time.time() - t0) / 60
         print(f'[timing] training:     {t_tr:.1f} min')
 
+        # Save a numbered snapshot of latest.pt and prune old ones
+        from config import MODEL_DIR, MODEL_SNAPSHOT_COUNT
+        snap_dst = os.path.join(MODEL_DIR, f'cycle_{cycle_num:04d}.pt')
+        shutil.copy2(os.path.join(MODEL_DIR, 'latest.pt'), snap_dst)
+        snapshots = sorted(glob.glob(os.path.join(MODEL_DIR, 'cycle_*.pt')))
+        for old in snapshots[:-MODEL_SNAPSHOT_COUNT]:
+            os.remove(old)
+            print(f'[snapshots] pruned {os.path.basename(old)}')
+
         # Evaluating new parameters
         t0 = time.time()
         promoted, ev_stats = evaluate_network()
@@ -118,10 +130,12 @@ def _run(stats_path):
             'sp_W_pct':     round(sp_stats.get('W_pct', 0), 1),
             'sp_D_pct':     round(sp_stats.get('D_pct', 0), 1),
             'sp_L_pct':     round(sp_stats.get('L_pct', 0), 1),
-            'sp_positions': sp_stats.get('positions', ''),
-            'sp_unique':    sp_stats.get('unique', ''),
-            'sp_entropy':   sp_stats.get('entropy', ''),
-            'sp_top1':      sp_stats.get('top1_count', ''),
+            'sp_positions':    sp_stats.get('positions', ''),
+            'sp_unique':        sp_stats.get('unique', ''),
+            'sp_entropy':       sp_stats.get('entropy', ''),
+            'sp_top1':          sp_stats.get('top1_count', ''),
+            'sp_avg_game_len':  sp_stats.get('avg_game_len', ''),
+            'sp_avg_walls':     sp_stats.get('avg_walls', ''),
             'loss':         tr_stats.get('loss', ''),
             'loss_policy':  tr_stats.get('loss_policy', ''),
             'loss_value':   tr_stats.get('loss_value', ''),

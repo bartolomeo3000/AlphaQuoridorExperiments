@@ -20,7 +20,7 @@ from copy import deepcopy
 
 from config import (
     SP_GAME_COUNT, SP_TEMPERATURE, TEMP_CUTOFF, SP_NUM_WORKERS, OPENING_DEPTH,
-    DRAW_SHAPE_SCALE, MODEL_DIR, DATA_DIR, SP_CKPT_EVERY,
+    DRAW_SHAPE_SCALE, MODEL_DIR, DATA_DIR, SP_CKPT_EVERY, USE_BFS_CHANNELS,
 )
 
 # Persistent pool — created once, reused across all training cycles so workers
@@ -49,15 +49,17 @@ def write_data(history):
 
 # Atomically save self-play checkpoint so a mid-game kill loses at most
 # SP_CKPT_EVERY games rather than the entire cycle's worth.
-def _save_ckpt(path, history, outcomes, opening_seqs, completed):
+def _save_ckpt(path, history, outcomes, opening_seqs, completed, total_game_len=0, total_walls=0):
     tmp = path + '.tmp'
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(tmp, 'wb') as f:
         pickle.dump({
-            'history':      history,
-            'outcomes':     outcomes,
-            'opening_seqs': opening_seqs,
-            'completed':    completed,
+            'history':        history,
+            'outcomes':       outcomes,
+            'opening_seqs':   opening_seqs,
+            'completed':      completed,
+            'total_game_len': total_game_len,
+            'total_walls':    total_walls,
         }, f)
     # On Windows, Defender/Search Indexer can briefly lock the destination file
     # causing os.replace to raise PermissionError.  Retry a few times.
@@ -87,6 +89,7 @@ def play(model):
     state = State()
     N = state.N
     move_num = 0
+    wall_count = 0
 
     while True:
         # When the game ends
@@ -105,11 +108,15 @@ def play(model):
             policies[action] = policy
         history.append([state.pieces_array(), policies, None])
 
-        # Draw shaping: value = DRAW_SHAPE_SCALE * (enemy_dist - player_dist) / (N-1)
-        # Range [-DRAW_SHAPE_SCALE, +DRAW_SHAPE_SCALE]. Zero-sum: after board rotation enemy_dist and player_dist swap.
-        p_row = state.player[0] // N  # 0 = at goal, N-1 = at start
-        e_row = state.enemy[0] // N   # 0 = enemy at goal (= player loses), N-1 = enemy at start
-        draw_values.append(DRAW_SHAPE_SCALE * (e_row - p_row) / (N - 1))
+        # Draw shaping: value = DRAW_SHAPE_SCALE * (e_dist - p_dist) / (N-1)
+        # BFS mode: wall-aware distances (better signal). Row mode: raw row proxy.
+        # Zero-sum: after board rotation the two distances swap roles.
+        if USE_BFS_CHANNELS:
+            p_dist, e_dist = state.bfs_distances()
+        else:
+            p_dist = state.player[0] // N  # 0 = at goal, N-1 = at start
+            e_dist = state.enemy[0] // N   # 0 = enemy at goal, N-1 = at start
+        draw_values.append(DRAW_SHAPE_SCALE * (e_dist - p_dist) / (N - 1))
 
         # Getting the action
         action = np.random.choice(state.legal_actions(), p=scores)
@@ -117,6 +124,10 @@ def play(model):
         # Track opening moves for diversity stats
         if move_num < OPENING_DEPTH:
             opening.append(int(action))
+
+        # Track wall placements
+        if action >= N * N:
+            wall_count += 1
 
         # Getting the next state
         state = state.next(action)
@@ -133,7 +144,7 @@ def play(model):
         for i in range(len(history)):
             history[i][2] = value
             value = -value
-    return history, outcome, tuple(opening)
+    return history, outcome, tuple(opening), move_num, wall_count
 
 # Worker function: plays exactly one game. Defined at module level so it can
 # be pickled on Windows (spawn). Model weights are passed as bytes each call
@@ -146,8 +157,8 @@ def _worker(args):
     model.load_state_dict(torch.load(io.BytesIO(state_dict_bytes), map_location='cpu'))
     model.eval()
 
-    history, outcome, opening_seq = play(model)
-    return history, outcome, opening_seq
+    history, outcome, opening_seq, game_len, walls = play(model)
+    return history, outcome, opening_seq, game_len, walls
 
 # Self-Play
 def self_play(cycle_num=None):
@@ -165,24 +176,29 @@ def self_play(cycle_num=None):
         ckpt_path = os.path.join(DATA_DIR, f'.sp_ckpt_c{cycle_num:04d}.pkl')
 
     # ── Load partial checkpoint if one exists ────────────────────────────────
-    history      = []
-    outcomes     = {'W': 0, 'D': 0, 'L': 0}
-    opening_seqs = []
-    completed    = 0
+    history        = []
+    outcomes       = {'W': 0, 'D': 0, 'L': 0}
+    opening_seqs   = []
+    completed      = 0
+    total_game_len = 0
+    total_walls    = 0
 
     if ckpt_path and os.path.exists(ckpt_path):
         try:
             with open(ckpt_path, 'rb') as f:
                 ckpt = pickle.load(f)
-            history      = ckpt['history']
-            outcomes     = ckpt['outcomes']
-            opening_seqs = ckpt['opening_seqs']
-            completed    = ckpt['completed']
+            history        = ckpt['history']
+            outcomes       = ckpt['outcomes']
+            opening_seqs   = ckpt['opening_seqs']
+            completed      = ckpt['completed']
+            total_game_len = ckpt.get('total_game_len', 0)
+            total_walls    = ckpt.get('total_walls', 0)
             print(f'[resume] self-play checkpoint found: '
                   f'{completed}/{SP_GAME_COUNT} games already done')
         except Exception as exc:
             print(f'[resume] checkpoint unreadable ({exc}), starting fresh')
             history, outcomes, opening_seqs, completed = [], {'W':0,'D':0,'L':0}, [], 0
+            total_game_len, total_walls = 0, 0
 
     # ── Serialize model weights once; send to all workers via IPC ─────────────
     gpu_model = load_model(os.path.join(MODEL_DIR, 'best.pt'))
@@ -197,17 +213,20 @@ def self_play(cycle_num=None):
         args = [(state_dict_bytes,)] * remaining
         pool = _get_pool()
         since_ckpt = 0
-        for game_history, outcome, opening_seq in pool.imap_unordered(_worker, args):
+        for game_history, outcome, opening_seq, game_len, walls in pool.imap_unordered(_worker, args):
             history.extend(game_history)
             outcomes[outcome] += 1
             opening_seqs.append(opening_seq)
+            total_game_len += game_len
+            total_walls    += walls
             completed += 1
             since_ckpt += 1
             print(f'\rSelf-play {completed}/{SP_GAME_COUNT}  '
                   f'W:{outcomes["W"]}  D:{outcomes["D"]}  L:{outcomes["L"]}', end='')
             if ckpt_path and since_ckpt >= SP_CKPT_EVERY:
                 try:
-                    _save_ckpt(ckpt_path, history, outcomes, opening_seqs, completed)
+                    _save_ckpt(ckpt_path, history, outcomes, opening_seqs, completed,
+                               total_game_len, total_walls)
                 except Exception as exc:
                     print(f'\n[ckpt] WARNING: save failed at game {completed} ({exc}) — continuing without checkpoint')
                 since_ckpt = 0
@@ -239,14 +258,20 @@ def self_play(cycle_num=None):
     if ckpt_path and os.path.exists(ckpt_path):
         os.remove(ckpt_path)
 
+    avg_game_len = total_game_len / total if total else 0
+    avg_walls    = total_walls    / total if total else 0
+    print(f'Game length: {avg_game_len:.1f} plies avg  |  Walls placed: {avg_walls:.1f} avg')
+
     return {
-        'W_pct':     100 * outcomes['W'] / total,
-        'D_pct':     100 * outcomes['D'] / total,
-        'L_pct':     100 * outcomes['L'] / total,
-        'positions': len(history),
-        'unique':    n_unique,
-        'entropy':   round(entropy, 2),
-        'top1_count': top3[0][1] if top3 else 0,
+        'W_pct':        100 * outcomes['W'] / total,
+        'D_pct':        100 * outcomes['D'] / total,
+        'L_pct':        100 * outcomes['L'] / total,
+        'positions':    len(history),
+        'unique':       n_unique,
+        'entropy':      round(entropy, 2),
+        'top1_count':   top3[0][1] if top3 else 0,
+        'avg_game_len': round(avg_game_len, 1),
+        'avg_walls':    round(avg_walls, 1),
     }
 
 # Running the function

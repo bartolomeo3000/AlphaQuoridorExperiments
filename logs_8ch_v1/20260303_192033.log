@@ -1,0 +1,6 @@
+Logging to ./logs_8ch\20260303_192033.log
+Variant: 8-channel (BFS channels ON)  |  model=./model_8ch  data=./data_8ch
+Resuming from cycle 14
+
+==================== Cycle  14  [19:20:33] ====================
+Self-play 1/200  W:0  D:0  L:1
