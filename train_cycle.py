@@ -46,6 +46,7 @@ _CSV_HEADERS = [
     'sp_avg_game_len', 'sp_avg_walls',
     'loss', 'loss_policy', 'loss_value',
     'eval_score', 'promoted',
+    'en_entropy', 'en_unique', 'en_top1',
     'vs_random', 'vs_greedy', 'vs_bfs',
     't_selfplay_min', 't_train_min', 't_evalnet_min', 't_evalbest_min', 't_cycle_min',
 ]
@@ -104,7 +105,7 @@ def _run(stats_path):
 
         # Evaluating new parameters
         t0 = time.time()
-        promoted, ev_stats = evaluate_network()
+        promoted, ev_stats = evaluate_network(cycle_num=cycle_num)
         t_en = (time.time() - t0) / 60
         print(f'[timing] eval-network: {t_en:.1f} min')
 
@@ -141,6 +142,9 @@ def _run(stats_path):
             'loss_value':   tr_stats.get('loss_value', ''),
             'eval_score':   ev_stats.get('score', ''),
             'promoted':     int(promoted),
+            'en_entropy':   ev_stats.get('entropy', ''),
+            'en_unique':    ev_stats.get('unique', ''),
+            'en_top1':      ev_stats.get('top1_count', ''),
             'vs_random':    bp_stats.get('vs_random') if bp_stats.get('vs_random') is not None else '',
             'vs_greedy':    bp_stats.get('vs_greedy') if bp_stats.get('vs_greedy') is not None else '',
             'vs_bfs':       bp_stats.get('vs_bfs') if bp_stats.get('vs_bfs') is not None else '',
