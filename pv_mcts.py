@@ -13,7 +13,7 @@ from copy import deepcopy
 import random
 
 from config import (
-    PV_EVALUATE_COUNT, DIRICHLET_ALPHA, DIRICHLET_EPSILON, POSITION_PRIOR_BOOST, BFS_MOVE_BOOST,
+    PV_EVALUATE_COUNT, DIRICHLET_ALPHA, DIRICHLET_EPSILON, POSITION_PRIOR_BOOST, BFS_MOVE_BOOST, BFS_MOVE_PENALTY,
 )
 
 # Inference
@@ -42,14 +42,18 @@ def predict(model, state):
                 policies[i] *= POSITION_PRIOR_BOOST
 
     # Extra boost for the pawn move(s) that advance along the BFS-shortest path to goal
-    if BFS_MOVE_BOOST != 1.0:
+    # and penalty for pawn moves that retreat (increase BFS distance).
+    if BFS_MOVE_BOOST != 1.0 or BFS_MOVE_PENALTY != 1.0:
         walls_t = tuple(state.walls)
-        h_e, v_e = _get_blocked_edges(N, walls_t)       # cached — no recompute cost
+        h_e, v_e = _get_blocked_edges(N, walls_t)
         dist = _bfs_goal_distances(N, h_e, v_e, 0)     # dist to row 0 = current player's goal
         current_dist = dist[state.player[0]]
         for i, action in enumerate(legal):
-            if action < N * N and dist[action] < current_dist:
-                policies[i] *= BFS_MOVE_BOOST
+            if action < N * N:
+                if dist[action] < current_dist:
+                    policies[i] *= BFS_MOVE_BOOST
+                elif dist[action] > current_dist:
+                    policies[i] *= BFS_MOVE_PENALTY
 
     policies /= np.sum(policies) if np.sum(policies) else 1  # normalise to sum to 1
 
@@ -158,6 +162,56 @@ def pv_mcts_scores(model, state, temperature, add_noise=False, use_q_selection=F
     else: # Add variation with Boltzmann distribution over visit counts
         scores = boltzman(scores, temperature)
     return scores
+
+def pv_mcts_full(model, state, rollouts):
+    """Run MCTS and return (visit_probs_over_legal_actions, root_q_value).
+
+    Unlike pv_mcts_scores, always returns raw visit proportions (never
+    collapses to one-hot) and also returns the root Q value (tanh scale).
+    """
+    class Node:
+        def __init__(self, state, p):
+            self.state = state
+            self.p = p
+            self.w = 0.0
+            self.n = 0
+            self.child_nodes = None
+
+        def evaluate(self):
+            if self.state.is_done():
+                value = -1 if self.state.is_lose() else 0
+                self.w += value; self.n += 1
+                return value
+            if not self.child_nodes:
+                policies, value = predict(model, self.state)
+                self.w += value; self.n += 1
+                self.child_nodes = [
+                    Node(self.state.next(a), p)
+                    for a, p in zip(self.state.legal_actions(), policies)
+                ]
+                return value
+            value = -self.next_child_node().evaluate()
+            self.w += value; self.n += 1
+            return value
+
+        def next_child_node(self):
+            C_PUCT = 1.0
+            t = sum(c.n for c in self.child_nodes)
+            return self.child_nodes[np.argmax([
+                (-c.w / c.n if c.n else 0.0) + C_PUCT * c.p * sqrt(t) / (1 + c.n)
+                for c in self.child_nodes
+            ])]
+
+    root = Node(state, 0)
+    for _ in range(rollouts):
+        root.evaluate()
+
+    visits = np.array([c.n for c in root.child_nodes], dtype=np.float32)
+    total = visits.sum()
+    visit_probs = (visits / total).tolist() if total > 0 else (np.ones(len(visits)) / len(visits)).tolist()
+    root_q = root.w / root.n if root.n else 0.0
+    return visit_probs, float(root_q)
+
 
 # Action selection with Monte Carlo Tree Search
 def pv_mcts_action(model, temperature=0, add_noise=False, temp_cutoff=None, use_q_selection=False):

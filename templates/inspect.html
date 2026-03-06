@@ -25,6 +25,14 @@
       <input type="number" id="depth-in" value="0" min="0" max="400" style="width:80px">
 
       <hr style="border-color:var(--border);margin:10px 0">
+      <label class="text-dim" style="font-size:0.8rem">MCTS rollouts (0 = NN only)</label>
+      <select id="mcts-rollouts-in" style="width:100%;margin:4px 0 10px">
+        <option value="0" selected>0 — NN only</option>
+        <option value="100">100</option>
+        <option value="200">200</option>
+        <option value="400">400</option>
+        <option value="800">800</option>
+      </select>
       <button class="btn btn-primary" onclick="analyze()">Analyze ▶</button>
       <button class="btn" onclick="resetBoard()" style="margin-top:6px">Reset Board</button>
       <button class="btn" onclick="copyState()" style="margin-top:4px">Copy State JSON</button>
@@ -44,6 +52,10 @@
           <div class="label">Value Estimate (win prob)</div>
           <div id="value-out" class="value">—</div>
         </div>
+        <div class="stat-chip" id="mcts-value-chip" style="display:none">
+          <div class="label">MCTS Value (win prob)</div>
+          <div id="mcts-value-out" class="value">—</div>
+        </div>
         <div class="stat-chip">
           <div class="label">P1 BFS distance</div>
           <div id="p1-bfs-out" class="value">—</div>
@@ -60,7 +72,7 @@
 
       <!-- Policy strip -->
       <div class="card">
-        <div class="card-title">Policy (top 15 legal actions by prior)</div>
+        <div class="card-title" id="policy-card-title">Policy (top 15 legal actions by prior)</div>
         <div id="policy-strip" class="policy-strip"></div>
       </div>
 

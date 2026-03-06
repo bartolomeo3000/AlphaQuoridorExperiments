@@ -2,7 +2,7 @@
 {% block title %}Play{% endblock %}
 
 {% block content %}
-<h1 class="page-title">Human vs AI</h1>
+<h1 class="page-title" id="page-title">Human vs AI</h1>
 
 <div class="play-layout">
   <!-- Board -->
@@ -15,19 +15,22 @@
     <!-- Setup -->
     <div class="play-info" id="setup-panel">
       <h3>New Game</h3>
-      <label class="text-dim" style="font-size:0.82rem">Rollouts per AI move</label>
-      <select id="rollout-select" style="width:100%;margin:6px 0 12px">
-        <option value="100">100</option>
-        <option value="200">200</option>
-        <option value="400" selected>400</option>
-        <option value="800">800</option>
+      <label class="text-dim" style="font-size:0.82rem">Game mode</label>
+      <select id="side-select" style="width:100%;margin:6px 0 12px" onchange="onSideSelectChange()">
+        <option value="1">vs AI &mdash; play as P1 (bottom, green)</option>
+        <option value="2">vs AI &mdash; play as P2 (top, blue)</option>
+        <option value="0">2 Players &mdash; both human</option>
       </select>
 
-      <label class="text-dim" style="font-size:0.82rem">You play as</label>
-      <select id="side-select" style="width:100%;margin:6px 0 12px">
-        <option value="1">P1 (bottom, green) — goes first</option>
-        <option value="2">P2 (top, blue) — goes second</option>
-      </select>
+      <div id="rollout-wrap">
+        <label class="text-dim" style="font-size:0.82rem">Rollouts per AI move</label>
+        <select id="rollout-select" style="width:100%;margin:6px 0 12px">
+          <option value="100">100</option>
+          <option value="200">200</option>
+          <option value="400" selected>400</option>
+          <option value="800">800</option>
+        </select>
+      </div>
 
       <button class="btn btn-primary" id="btn-new" style="width:100%">Start Game</button>
     </div>
@@ -50,7 +53,8 @@
       </div>
       <div style="font-size:0.82rem;color:var(--text-dim)" id="depth-label">Move 0</div>
 
-      <button class="btn" id="btn-resign" style="width:100%;margin-top:14px">Resign / New Game</button>
+      <button class="btn" id="btn-undo" style="width:100%;margin-top:14px" onclick="undoMove()" disabled>&#8617; Undo</button>
+      <button class="btn" id="btn-resign" style="width:100%;margin-top:6px">Resign / New Game</button>
 
       <hr style="border-color:var(--border);margin:14px 0">
       <button class="btn" id="btn-analysis-toggle" onclick="toggleAnalysis()" style="width:100%">🔬 Show Analysis</button>
@@ -76,6 +80,10 @@
       <div class="label">Value (win prob)</div>
       <div id="an-value" class="value">—</div>
     </div>
+    <div class="stat-chip" id="an-mcts-value-chip" style="display:none">
+      <div class="label">MCTS Value (win prob)</div>
+      <div id="an-mcts-value" class="value">—</div>
+    </div>
     <div class="stat-chip">
       <div class="label">P1 BFS dist</div>
       <div id="an-p1bfs" class="value">—</div>
@@ -92,7 +100,11 @@
   </div>
 
   <div class="card">
-    <div class="card-title">Policy — top 15 legal actions by prior</div>
+    <div class="card-title" id="an-policy-title">Policy — top 15 legal actions by prior</div>
+    <div style="margin-bottom:6px">
+      <button class="btn" id="btn-mcts-analyze" onclick="runMCTSAnalysis()" style="font-size:0.8rem;padding:4px 10px">Run MCTS Analysis</button>
+      <button class="btn" id="btn-mcts-auto" onclick="toggleAutoMCTS()" style="font-size:0.8rem;padding:4px 10px;margin-left:6px">Auto MCTS: Off</button>
+    </div>
     <div id="an-policy" class="policy-strip"></div>
   </div>
 

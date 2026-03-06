@@ -25,7 +25,7 @@ from flask import (
 from config import LOGS_DIR, MODEL_DIR, USE_BFS_CHANNELS
 from game import State, _get_blocked_edges, _bfs_goal_distances
 from dual_network import load_model, DN_INPUT_SHAPE
-from pv_mcts import pv_mcts_scores, predict
+from pv_mcts import pv_mcts_scores, predict, pv_mcts_full
 import config as _cfg
 
 # ── Flask app setup ───────────────────────────────────────────────────────────
@@ -212,11 +212,14 @@ def api_play_new():
     data = request.get_json() or {}
     rollouts = int(data.get('rollouts', 400))
     human_first = bool(data.get('human_first', True))
+    vs_human = bool(data.get('vs_human', False))
 
     state = State()
     session['game'] = _serialize_state(state)
     session['rollouts'] = rollouts
     session['human_first'] = human_first
+    session['vs_human'] = vs_human
+    session['game_history'] = []
 
     display = _state_to_display(state)
 
@@ -234,6 +237,7 @@ def api_play_new():
     else:
         display['ai_action'] = None
 
+    display['can_undo'] = False
     return jsonify(display)
 
 
@@ -246,18 +250,26 @@ def api_play_move():
     if game_data is None:
         return jsonify({'error': 'no active game'}), 400
 
+    # Push current state onto undo history BEFORE applying the move
+    history = session.get('game_history', [])
+    history.append(game_data)
+    session['game_history'] = history
+
     state = _deserialize_state(game_data)
     legal = state.legal_actions()
 
     if action not in legal:
+        history.pop()
+        session['game_history'] = history
         return jsonify({'error': f'illegal action {action}'}), 400
 
     state = state.next(action)
     display = _state_to_display(state)
     display['ai_action'] = None
 
-    if state.is_done():
+    if state.is_done() or session.get('vs_human', False):
         session['game'] = _serialize_state(state)
+        display['can_undo'] = len(history) > 0
         return jsonify(display)
 
     # AI responds
@@ -272,6 +284,21 @@ def api_play_move():
         display['ai_action'] = None
 
     session['game'] = _serialize_state(state)
+    display['can_undo'] = len(history) > 0
+    return jsonify(display)
+
+
+@app.route('/api/play/undo', methods=['POST'])
+def api_play_undo():
+    history = session.get('game_history', [])
+    if not history:
+        return jsonify({'error': 'nothing to undo'}), 400
+    prev_state_data = history.pop()
+    session['game_history'] = history
+    session['game'] = prev_state_data
+    display = _state_to_display(_deserialize_state(prev_state_data))
+    display['can_undo'] = len(history) > 0
+    display['ai_action'] = None
     return jsonify(display)
 
 
@@ -284,6 +311,7 @@ def api_inspect():
     enemy  = data.get('enemy',  [45, 5])
     walls  = data.get('walls',  [0] * 36)
     depth  = int(data.get('depth', 0))
+    mcts_rollouts = int(data.get('mcts_rollouts', 0))
 
     state = State(
         player=list(player),
@@ -324,13 +352,23 @@ def api_inspect():
         pol_arr, value = predict(model, state)
         policies = {int(a): float(p) for a, p in zip(legal, pol_arr)}
 
+    # Optional MCTS forward pass
+    mcts_policies = None
+    mcts_value    = None
+    if mcts_rollouts > 0 and model is not None:
+        visit_probs, root_q = pv_mcts_full(model, deepcopy(state), mcts_rollouts)
+        mcts_policies = {int(a): float(p) for a, p in zip(legal, visit_probs)}
+        mcts_value    = root_q
+
     return jsonify({
-        'channels':      channels,       # list of n_channels × 7×7 grids
+        'channels':      channels,
         'p_bfs':         to_grid(p_bfs_flat),
         'e_bfs':         to_grid(e_bfs_flat_abs),
         'legal_actions': legal,
-        'policies':      policies,       # {action_int: probability} or null
-        'value':         value,          # float or null
+        'policies':      policies,
+        'value':         value,
+        'mcts_policies': mcts_policies,
+        'mcts_value':    mcts_value,
         'N':             N,
         'n_channels':    n_channels,
         'use_bfs':       USE_BFS_CHANNELS,

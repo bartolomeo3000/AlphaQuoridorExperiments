@@ -30,8 +30,10 @@ DIRICHLET_ALPHA    = 0.15   # Noise concentration — smaller = spread out more 
 DIRICHLET_EPSILON  = 0.25   # Fraction of prior replaced by noise (AlphaZero default; bump to 0.40 if opening entropy collapses)
 POSITION_PRIOR_BOOST = 3.0  # Scale position-move priors before renormalising
                              # Counteracts wall actions dominating the action space (~30-50 walls vs ~4 position moves)
-BFS_MOVE_BOOST       = 10.0   # Extra multiplier (on top of POSITION_PRIOR_BOOST) for the pawn move(s)
+BFS_MOVE_BOOST       = 20.0   # Extra multiplier (on top of POSITION_PRIOR_BOOST) for the pawn move(s)
                              # that reduce BFS distance to the goal row. Set to 1.0 to disable.
+BFS_MOVE_PENALTY     = 0.1   # Multiplier applied to pawn moves that INCREASE BFS distance to goal.
+                             # Stacks with POSITION_PRIOR_BOOST. Set to 1.0 to disable.
 
 # ── Self-play ─────────────────────────────────────────────────────────────────
 SP_GAME_COUNT  = 300    # Games generated per self-play phase  (AlphaZero paper: 25 000)

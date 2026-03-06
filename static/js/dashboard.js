@@ -49,6 +49,17 @@ function initCharts() {
     },
   });
 
+  charts.enEntropy = mkChart('c-en-entropy', 'line', [
+    { label: 'Eval Entropy (bits)', data: [], borderColor: '#5ee8c0', backgroundColor: 'transparent', tension: 0.3, yAxisID: 'y' },
+    { label: 'Eval Top-1 Freq', data: [], borderColor: '#e05c6a', backgroundColor: 'transparent', tension: 0.3, yAxisID: 'y2', borderDash: [4,3] },
+  ], {
+    scales: {
+      x: CHART_DEFAULTS.scales.x,
+      y:  { ...CHART_DEFAULTS.scales.y, position: 'left' },
+      y2: { ...CHART_DEFAULTS.scales.y, position: 'right', grid: { drawOnChartArea: false } },
+    },
+  });
+
   charts.gamelen = mkChart('c-gamelen', 'line', [
     { label: 'Avg Game Len', data: [], borderColor: '#5ee8c0', backgroundColor: 'transparent', tension: 0.3, yAxisID: 'y' },
     { label: 'Avg Walls Placed', data: [], borderColor: '#e05c6a', backgroundColor: 'transparent', tension: 0.3, yAxisID: 'y2', borderDash: [4,3] },
@@ -91,6 +102,35 @@ function updateSummary(rows) {
   if (!rows.length) return;
   const last = rows[rows.length - 1];
   document.getElementById('s-cycles').textContent  = rows.length;
+
+  const totalMin = rows.reduce((acc, r) => {
+    return acc +
+      (parseFloat(r.t_selfplay_min) || 0) +
+      (parseFloat(r.t_train_min)    || 0) +
+      (parseFloat(r.t_evalnet_min)  || 0) +
+      (parseFloat(r.t_evalbest_min) || 0);
+  }, 0);
+  if (totalMin > 0) {
+    const h = Math.floor(totalMin / 60);
+    const m = Math.round(totalMin % 60);
+    document.getElementById('s-total-time').textContent = h > 0 ? `${h}h ${m}m` : `${m}m`;
+  } else {
+    document.getElementById('s-total-time').textContent = '—';
+  }
+
+  const lastCycleMin =
+    (parseFloat(last.t_selfplay_min) || 0) +
+    (parseFloat(last.t_train_min)    || 0) +
+    (parseFloat(last.t_evalnet_min)  || 0) +
+    (parseFloat(last.t_evalbest_min) || 0);
+  if (lastCycleMin > 0) {
+    const lh = Math.floor(lastCycleMin / 60);
+    const lm = Math.round(lastCycleMin % 60);
+    document.getElementById('s-cycle-time').textContent = lh > 0 ? `${lh}h ${lm}m` : `${lm}m`;
+  } else {
+    document.getElementById('s-cycle-time').textContent = '—';
+  }
+
   document.getElementById('s-latest').textContent  = last.cycle ?? '—';
   document.getElementById('s-eval').textContent    = last.eval_score != null ? last.eval_score.toFixed(3) : '—';
   document.getElementById('s-loss').textContent    = last.loss != null ? last.loss.toFixed(4) : '—';
@@ -118,6 +158,11 @@ function updateCharts(rows) {
   setData(charts.entropy, cycles,
     rows.map(r => r.sp_entropy),
     rows.map(r => r.sp_top1),
+  );
+
+  setData(charts.enEntropy, cycles,
+    rows.map(r => r.en_entropy  != null && r.en_entropy  !== '' ? r.en_entropy  : null),
+    rows.map(r => r.en_top1     != null && r.en_top1     !== '' ? r.en_top1     : null),
   );
 
   setData(charts.gamelen, cycles,

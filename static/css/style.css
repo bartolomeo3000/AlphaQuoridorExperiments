@@ -357,6 +357,22 @@ input[type=range] {
 
 .policy-bar.top-action .bar-inner { background: var(--accent2); }
 
+.policy-bar .bars-pair {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+}
+.policy-bar .bar-nn {
+  width: 13px;
+  background: var(--accent);
+  border-radius: 3px 3px 0 0;
+}
+.policy-bar .bar-mcts {
+  width: 13px;
+  background: var(--accent2);
+  border-radius: 3px 3px 0 0;
+}
+
 /* ── Value display ──────────────────────────────── */
 .value-display {
   font-size: 2.4rem;

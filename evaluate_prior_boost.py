@@ -174,18 +174,25 @@ def main():
     parser = argparse.ArgumentParser(description='Evaluate whether prior boosts are still needed.')
     parser.add_argument('--model',     default='best',   help='Model to load: "best" or "latest" (default: best)')
     parser.add_argument('--games',     type=int, default=40, help='Number of evaluation games (default: 40)')
-    parser.add_argument('--threshold', type=float, default=0.45, help='Score for no-boost side to be considered independent (default: 0.45)')
+    parser.add_argument('--threshold', type=float, default=0.45, help='Score for Model B to be considered better (default: 0.45)')
+    parser.add_argument('--pos-a',  type=float, default=POSITION_PRIOR_BOOST, help='POSITION_PRIOR_BOOST for Model A (default: config value)')
+    parser.add_argument('--bfs-a',  type=float, default=BFS_MOVE_BOOST,       help='BFS_MOVE_BOOST for Model A (default: config value)')
+    parser.add_argument('--pos-b',  type=float, default=1.0,                  help='POSITION_PRIOR_BOOST for Model B (default: 1.0)')
+    parser.add_argument('--bfs-b',  type=float, default=1.0,                  help='BFS_MOVE_BOOST for Model B (default: 1.0)')
     args = parser.parse_args()
+
+    pos_boost_a, bfs_boost_a = args.pos_a, args.bfs_a
+    pos_boost_b, bfs_boost_b = args.pos_b, args.bfs_b
 
     model_path = os.path.join(MODEL_DIR, f'{args.model}.pt')
     if not os.path.exists(model_path):
         sys.exit(f'Model not found: {model_path}')
 
-    print(f'Model:        {model_path}')
-    print(f'Games:        {args.games}')
-    print(f'Boosts ON:    POSITION_PRIOR_BOOST={POSITION_PRIOR_BOOST}  BFS_MOVE_BOOST={BFS_MOVE_BOOST}')
-    print(f'Boosts OFF:   POSITION_PRIOR_BOOST=1.0  BFS_MOVE_BOOST=1.0')
-    print(f'Threshold:    no-boost score >= {args.threshold} → boosts no longer needed')
+    print(f'Model:    {model_path}')
+    print(f'Games:    {args.games}')
+    print(f'Model A:  POSITION_PRIOR_BOOST={pos_boost_a}  BFS_MOVE_BOOST={bfs_boost_a}')
+    print(f'Model B:  POSITION_PRIOR_BOOST={pos_boost_b}  BFS_MOVE_BOOST={bfs_boost_b}')
+    print(f'Threshold: Model B score >= {args.threshold} → Model B is competitive')
     print()
 
     # Serialize weights once
@@ -196,8 +203,8 @@ def main():
     worker_args = [
         (
             sd_bytes, i,
-            POSITION_PRIOR_BOOST, BFS_MOVE_BOOST,   # Model A: boosts ON
-            1.0, 1.0,                                 # Model B: boosts OFF
+            pos_boost_a, bfs_boost_a,
+            pos_boost_b, bfs_boost_b,
             EN_TEMPERATURE, EN_TEMP_CUTOFF,
         )
         for i in range(args.games)
@@ -229,17 +236,15 @@ def main():
     score_b = (wins_b + 0.5 * draws) / args.games
     avg_plies = total_plies / args.games
 
-    print(f'\n── Results ──────────────────────────────────────────────')
-    print(f'  Boosted    score: {score_a:.4f}  ({wins_a}W / {draws}D / {wins_b}L)')
-    print(f'  No-boost   score: {score_b:.4f}  ({wins_b}W / {draws}D / {wins_a}L)')
+    print('\n── Results ──────────────────────────────────────────────')
+    print(f'  Model A (pos={pos_boost_a} bfs={bfs_boost_a})  score: {score_a:.4f}  ({wins_a}W / {draws}D / {wins_b}L)')
+    print(f'  Model B (pos={pos_boost_b} bfs={bfs_boost_b})  score: {score_b:.4f}  ({wins_b}W / {draws}D / {wins_a}L)')
     print(f'  Avg game length:  {avg_plies:.1f} plies')
     print()
     if score_b >= args.threshold:
-        print(f'✓ No-boost score {score_b:.3f} >= {args.threshold}  →  NN has internalized the biases.')
-        print(f'  Safe to set POSITION_PRIOR_BOOST = BFS_MOVE_BOOST = 1.0 in config.py')
+        print(f'✓ Model B score {score_b:.3f} >= {args.threshold}  →  Model B is competitive.')
     else:
-        print(f'✗ No-boost score {score_b:.3f} < {args.threshold}  →  Boosts still helping.')
-        print(f'  Keep current values and re-run after more training cycles.')
+        print(f'✗ Model B score {score_b:.3f} < {args.threshold}  →  Model A wins convincingly.')
 
 
 if __name__ == '__main__':

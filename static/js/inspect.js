@@ -113,23 +113,36 @@ function copyState() {
 
 async function analyze() {
   const st = displayToInternal();
+  const mcts_rollouts = parseInt(document.getElementById('mcts-rollouts-in').value, 10) || 0;
   const resp = await fetch('/api/inspect', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(st),
+    body: JSON.stringify({ ...st, mcts_rollouts }),
   });
   const data = await resp.json();
 
   document.getElementById('results').classList.remove('hidden');
 
-  // Summary stats
+  // NN value chip
   const v     = data.value;
   const vEl   = document.getElementById('value-out');
-  const vProb = v != null ? (v + 1) / 2 : null;  // tanh [-1,1] → win prob [0,1]
+  const vProb = v != null ? (v + 1) / 2 : null;
   vEl.textContent = vProb != null ? (vProb * 100).toFixed(1) + '%' : '—';
   vEl.style.color = vProb != null
     ? (vProb > 0.55 ? 'var(--win)' : vProb < 0.45 ? 'var(--loss)' : 'var(--draw)')
     : '';
+
+  // MCTS value chip
+  const mctsChip = document.getElementById('mcts-value-chip');
+  if (data.mcts_value != null) {
+    const mv = (data.mcts_value + 1) / 2;
+    const mvEl = document.getElementById('mcts-value-out');
+    mvEl.textContent = (mv * 100).toFixed(1) + '%';
+    mvEl.style.color = mv > 0.55 ? 'var(--win)' : mv < 0.45 ? 'var(--loss)' : 'var(--draw)';
+    mctsChip.style.display = '';
+  } else {
+    mctsChip.style.display = 'none';
+  }
 
   // BFS distances for current player's position
   const p1r = Math.floor(editorState.p1_pos / N);
@@ -166,35 +179,65 @@ function renderPolicyStrip(data) {
   strip.innerHTML = '';
   if (!data.policies) { strip.textContent = 'No model loaded.'; return; }
 
-  // Sort by prob descending, take top 15
-  const entries = Object.entries(data.policies)
-    .map(([a, p]) => ({ a: parseInt(a), p }))
-    .sort((a, b) => b.p - a.p)
-    .slice(0, 15);
+  const hasMCTS = data.mcts_policies != null;
+  const isFP = (parseInt(document.getElementById('depth-in').value) || 0) % 2 === 0;
 
-  const maxP = entries[0]?.p || 1;
+  // Update card title
+  document.getElementById('policy-card-title').textContent = hasMCTS
+    ? 'Policy — top 15  \u25a0 NN prior  \u25a0 MCTS visits'
+    : 'Policy (top 15 legal actions by prior)';
+
+  const allEntries = Object.entries(data.policies)
+    .map(([a, p]) => ({ a: parseInt(a), p }));
+  const maxP = Math.max(...allEntries.map(e => e.p), 1e-9);
+  const maxM = hasMCTS ? Math.max(...allEntries.map(e => data.mcts_policies[e.a] ?? 0), 1e-9) : 1;
+  const entries = allEntries
+    .sort((a, b) => hasMCTS
+      ? (data.mcts_policies[b.a] ?? 0) - (data.mcts_policies[a.a] ?? 0)
+      : b.p - a.p)
+    .slice(0, 15);
   const BAR_HEIGHT = 60;
+
+  // Legend
+  if (hasMCTS) {
+    const legend = document.createElement('div');
+    legend.style.cssText = 'display:flex;gap:12px;font-size:0.72rem;color:var(--text-dim);margin-bottom:6px;width:100%';
+    legend.innerHTML =
+      '<span><span style="display:inline-block;width:10px;height:10px;background:var(--accent);border-radius:2px;margin-right:3px"></span>NN prior</span>' +
+      '<span><span style="display:inline-block;width:10px;height:10px;background:var(--accent2);border-radius:2px;margin-right:3px"></span>MCTS visits</span>';
+    strip.appendChild(legend);
+  }
 
   entries.forEach(({ a, p }, i) => {
     const div = document.createElement('div');
     div.className = 'policy-bar' + (i === 0 ? ' top-action' : '');
-
-    const h = Math.round((p / maxP) * BAR_HEIGHT);
+    const hNN  = Math.round((p / maxP) * BAR_HEIGHT);
     const label = actionLabel(a);
     const pct   = (p * 100).toFixed(1);
 
-    div.innerHTML = `
-      <div style="height:${BAR_HEIGHT}px;display:flex;align-items:flex-end">
-        <div class="bar-inner" style="height:${h}px" title="${label}: ${pct}%"></div>
-      </div>
-      <div>${pct}%</div>
-      <div>${label}</div>
-    `;
+    if (hasMCTS) {
+      const mp   = data.mcts_policies[a] ?? 0;
+      const hM   = Math.round((mp / maxM) * BAR_HEIGHT);
+      const mpct = (mp * 100).toFixed(1);
+      div.innerHTML = `
+        <div class="bars-pair" style="height:${BAR_HEIGHT}px">
+          <div class="bar-nn"   style="height:${hNN}px" title="NN: ${pct}%"></div>
+          <div class="bar-mcts" style="height:${hM}px"  title="MCTS: ${mpct}%"></div>
+        </div>
+        <div>${pct}%</div>
+        <div style="color:var(--accent2)">${mpct}%</div>
+        <div>${label}</div>`;
+    } else {
+      div.innerHTML = `
+        <div style="height:${BAR_HEIGHT}px;display:flex;align-items:flex-end">
+          <div class="bar-inner" style="height:${hNN}px" title="${label}: ${pct}%"></div>
+        </div>
+        <div>${pct}%</div>
+        <div>${label}</div>`;
+    }
 
-    const isFP = (parseInt(document.getElementById('depth-in').value) || 0) % 2 === 0;
     div.addEventListener('mouseenter', () => board.setExternalHover(actionToHoverInfo(a, isFP)));
     div.addEventListener('mouseleave', () => board.clearExternalHover());
-
     strip.appendChild(div);
   });
 }

@@ -5,9 +5,11 @@ const boardEl = document.getElementById('board');
 const board   = new QuoridorBoard(boardEl, { N, cellSize: 62, wallSize: 8, gap: 4 });
 
 let gameState   = null;
-let humanSide   = 1;   // 1 = P1 (first player), 2 = P2
+let humanSide   = 1;   // 1 = P1, 2 = P2, 0 = 2-player mode
+let gameMode    = 'vs_ai';  // 'vs_ai' | 'vs_human'
 let wallMode    = 'hwall';  // 'hwall' | 'vwall'
 let gameActive  = false;
+let canUndo     = false;
 
 // ── Wall orientation toggle ────────────────────────────────────────────
 
@@ -34,28 +36,38 @@ document.getElementById('btn-again').addEventListener('click', () => {
   board.draw({ N, p1_pos: 45, p2_pos: 3, p1_walls_left: 5, p2_walls_left: 5, walls: new Array(36).fill(0), legal: [], done: false, winner: null });
 });
 
-async function startNewGame() {
-  const rollouts   = parseInt(document.getElementById('rollout-select').value, 10);
-  humanSide        = parseInt(document.getElementById('side-select').value, 10);
-  const human_first = humanSide === 1;
+function onSideSelectChange() {
+  // Rollout selector is always visible — used for AI moves and MCTS analysis
+}
 
-  show('spinner-wrap');
+async function startNewGame() {
+  humanSide        = parseInt(document.getElementById('side-select').value, 10);
+  gameMode         = humanSide === 0 ? 'vs_human' : 'vs_ai';
+  const rollouts   = parseInt(document.getElementById('rollout-select').value, 10);
+  const human_first = gameMode === 'vs_human' || humanSide === 1;
+
+  document.getElementById('page-title').textContent =
+    gameMode === 'vs_human' ? '2 Player Game' : 'Human vs AI';
+
+  if (gameMode !== 'vs_human') show('spinner-wrap');
   hide('setup-panel');
   hide('result-panel');
 
   const data = await fetch('/api/play/new', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ rollouts, human_first }),
+    body: JSON.stringify({ rollouts, human_first, vs_human: gameMode === 'vs_human' }),
   }).then(r => r.json());
 
   hide('spinner-wrap');
   gameActive = true;
+  canUndo    = false;
   gameState  = data;
   setWallMode('hwall');
   show('game-panel');
+  updateUndoBtn();
   renderGame(data);
-  fetchAndRenderAnalysis(data);
+  fetchAndRenderAnalysis(data, getAnalysisRollouts());
 }
 
 // ── Board interaction ──────────────────────────────────────────────────
@@ -65,29 +77,38 @@ board.onClick(async (type, payload) => {
   if (gameState.done) return;
 
   // Determine if it's the human's turn
-  const humanTurn = (gameState.is_p1_turn && humanSide === 1) ||
+  const humanTurn = gameMode === 'vs_human' ||
+                    (gameState.is_p1_turn && humanSide === 1) ||
                     (!gameState.is_p1_turn && humanSide === 2);
   if (!humanTurn) return;
 
   let action = null;
 
+  // When it's P2's turn the legal action list is in P2's flipped frame.
+  // Convert absolute board coords → current-player frame before checking.
+  const W   = (N - 1) * (N - 1);
+  const isP2Turn = !gameState.is_p1_turn;
+  const absToFrame = absPos => isP2Turn ? (N * N - 1 - absPos) : absPos;
+  const wAbsToFrame = absWpos => isP2Turn ? (W - 1 - absWpos) : absWpos;
+
   if (type === 'cell') {
-    // Cell click always = pawn move
-    if ((gameState.legal || []).includes(payload.pos)) {
-      action = payload.pos;
+    const frameAction = absToFrame(payload.pos);
+    if ((gameState.legal || []).includes(frameAction)) {
+      action = frameAction;
     }
   } else if (type === 'hwall' && wallMode === 'hwall') {
-    action = N * N + payload.wpos;
+    action = N * N + wAbsToFrame(payload.wpos);
     if (!(gameState.legal || []).includes(action)) action = null;
   } else if (type === 'vwall' && wallMode === 'vwall') {
-    action = N * N + (N - 1) * (N - 1) + payload.wpos;
+    action = N * N + W + wAbsToFrame(payload.wpos);
     if (!(gameState.legal || []).includes(action)) action = null;
   }
 
   if (action === null) return;
 
   // Immediately render human's move locally so the board responds at once
-  const intermediate = applyHumanMoveLocally(gameState, action, humanSide);
+  const effectiveSide = gameMode === 'vs_human' ? (gameState.is_p1_turn ? 1 : 2) : humanSide;
+  const intermediate = applyHumanMoveLocally(gameState, action, effectiveSide);
   renderGame(intermediate);
 
   await sendMove(action);
@@ -138,7 +159,7 @@ function applyHumanMoveLocally(state, action, side) {
 }
 
 async function sendMove(action) {
-  show('spinner-wrap');
+  if (gameMode !== 'vs_human') show('spinner-wrap');
   gameActive = false;
 
   const data = await fetch('/api/play/move', {
@@ -151,40 +172,73 @@ async function sendMove(action) {
   gameState = data;
 
   if (!data.error) {
+    canUndo = data.can_undo ?? false;
+    if (!data.done) gameActive = true;
+    updateUndoBtn();
     renderGame(data);
     if (data.done) {
       showResult(data);
-    } else {
-      gameActive = true;
     }
-    fetchAndRenderAnalysis(data);
+    fetchAndRenderAnalysis(data, getAnalysisRollouts());
   } else {
     console.warn('Move error:', data.error);
     gameActive = true;
   }
 }
 
+function updateUndoBtn() {
+  const btn = document.getElementById('btn-undo');
+  if (!btn) return;
+  btn.disabled = !canUndo || !gameActive || (gameState && gameState.done);
+}
+
+async function undoMove() {
+  if (!canUndo || !gameActive) return;
+  gameActive = false;
+  updateUndoBtn();
+  const data = await fetch('/api/play/undo', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+  }).then(r => r.json());
+  if (!data.error) {
+    gameState = data;
+    canUndo = data.can_undo ?? false;
+    renderGame(data);
+    gameActive = true;
+    fetchAndRenderAnalysis(data, getAnalysisRollouts());
+  } else {
+    console.warn('Undo error:', data.error);
+    gameActive = true;
+  }
+  updateUndoBtn();
+}
+
 // ── Rendering ─────────────────────────────────────────────────────────
 
 function renderGame(state) {
-  board.draw({ ...state, highlight: new Set(state.legal || []) });
+  // legal actions are in current-player frame; convert pawn moves to absolute for highlight
+  const isP2Turn = !state.is_p1_turn;
+  const legalAbs = (state.legal || []).map(a =>
+    (a < N * N && isP2Turn) ? (N * N - 1 - a) : a
+  );
+  board.draw({ ...state, legal: legalAbs, highlight: new Set(legalAbs.filter(a => a < N * N)) });
 
   document.getElementById('p1-walls').textContent = state.p1_walls_left ?? '?';
   document.getElementById('p2-walls').textContent = state.p2_walls_left ?? '?';
   document.getElementById('depth-label').textContent = `Move ${state.depth}`;
 
-  const humanTurn = (state.is_p1_turn && humanSide === 1) ||
-                    (!state.is_p1_turn && humanSide === 2);
   const ind = document.getElementById('turn-indicator');
   if (state.done) {
     ind.className = 'turn-indicator turn-done';
     ind.textContent = 'Game over';
-  } else if (humanTurn) {
+  } else if (gameMode === 'vs_human') {
     ind.className = 'turn-indicator turn-human';
-    ind.textContent = '▶ Your turn';
+    ind.textContent = state.is_p1_turn ? '▶ P1\'s turn' : '▶ P2\'s turn';
   } else {
-    ind.className = 'turn-indicator turn-ai';
-    ind.textContent = '⚙ AI thinking…';
+    const humanTurn = (state.is_p1_turn && humanSide === 1) ||
+                      (!state.is_p1_turn && humanSide === 2);
+    ind.className = humanTurn ? 'turn-indicator turn-human' : 'turn-indicator turn-ai';
+    ind.textContent = humanTurn ? '▶ Your turn' : '⚙ AI thinking…';
   }
 }
 
@@ -195,6 +249,10 @@ function showResult(state) {
   if (state.winner === 'draw') {
     rtxt.textContent = '½ Draw!';
     rtxt.style.color = 'var(--draw)';
+  } else if (gameMode === 'vs_human') {
+    const winner = state.winner === 'p1' ? 'P1' : 'P2';
+    rtxt.textContent = `🎉 ${winner} wins!`;
+    rtxt.style.color = 'var(--win)';
   } else {
     const humanWon = (state.winner === 'p1' && humanSide === 1) ||
                      (state.winner === 'p2' && humanSide === 2);
@@ -221,7 +279,7 @@ function toggleAnalysis() {
   panel.classList.toggle('hidden', !analysisEnabled);
   // If turned on mid-game, fetch immediately
   if (analysisEnabled && gameState && !gameState.done) {
-    fetchAndRenderAnalysis(gameState);
+    fetchAndRenderAnalysis(gameState, getAnalysisRollouts());
   }
 }
 
@@ -241,12 +299,12 @@ function displayToInternal(state) {
   return { player, enemy, walls, depth: state.depth };
 }
 
-async function fetchAndRenderAnalysis(state) {
+async function fetchAndRenderAnalysis(state, mcts_rollouts = 0) {
   if (!analysisEnabled) return;
   const anSpinner = document.getElementById('an-spinner');
   anSpinner.classList.remove('hidden');
 
-  const body = displayToInternal(state);
+  const body = { ...displayToInternal(state), mcts_rollouts };
   let data;
   try {
     const resp = await fetch('/api/inspect', {
@@ -262,13 +320,24 @@ async function fetchAndRenderAnalysis(state) {
   }
   anSpinner.classList.add('hidden');
 
-  // Summary stats
-  const v     = data.value;
-  const vEl   = document.getElementById('an-value');
-  const vProb = v != null ? (v + 1) / 2 : null;  // tanh [-1,1] → win prob [0,1]
+  // NN value chip
+  const vProb = data.value != null ? (data.value + 1) / 2 : null;
+  const vEl = document.getElementById('an-value');
   vEl.textContent = vProb != null ? (vProb * 100).toFixed(1) + '%' : '—';
   vEl.style.color = vProb != null
     ? (vProb > 0.55 ? 'var(--win)' : vProb < 0.45 ? 'var(--loss)' : 'var(--draw)') : '';
+
+  // MCTS value chip
+  const mctsChip = document.getElementById('an-mcts-value-chip');
+  if (data.mcts_value != null) {
+    const mv = (data.mcts_value + 1) / 2;
+    const mvEl = document.getElementById('an-mcts-value');
+    mvEl.textContent = (mv * 100).toFixed(1) + '%';
+    mvEl.style.color = mv > 0.55 ? 'var(--win)' : mv < 0.45 ? 'var(--loss)' : 'var(--draw)';
+    mctsChip.style.display = '';
+  } else {
+    mctsChip.style.display = 'none';
+  }
 
   const p1r = Math.floor(state.p1_pos / N), p1c = state.p1_pos % N;
   const p2r = Math.floor(state.p2_pos / N), p2c = state.p2_pos % N;
@@ -277,38 +346,76 @@ async function fetchAndRenderAnalysis(state) {
   document.getElementById('an-legal').textContent = data.legal_actions?.length ?? '—';
 
   // Policy strip
+  const hasMCTS = data.mcts_policies != null;
+  document.getElementById('an-policy-title').textContent = hasMCTS
+    ? 'Policy — top 15  \u25a0 NN prior  \u25a0 MCTS visits'
+    : 'Policy — top 15 legal actions by prior';
+
   const strip = document.getElementById('an-policy');
   strip.innerHTML = '';
   if (data.policies) {
-    const entries = Object.entries(data.policies)
-      .map(([a, p]) => ({ a: parseInt(a), p }))
-      .sort((b, a) => a.p - b.p)
+    const allEntries = Object.entries(data.policies)
+      .map(([a, p]) => ({ a: parseInt(a), p }));
+    const maxP = Math.max(...allEntries.map(e => e.p), 1e-9);
+    const maxM = hasMCTS ? Math.max(...allEntries.map(e => data.mcts_policies[e.a] ?? 0), 1e-9) : 1;
+    const entries = allEntries
+      .sort((a, b) => hasMCTS
+        ? (data.mcts_policies[b.a] ?? 0) - (data.mcts_policies[a.a] ?? 0)
+        : b.p - a.p)
       .slice(0, 15);
-    const maxP = entries[0]?.p || 1;
     const BAR_H = 60;
     const isFP  = state.is_p1_turn;
+
+    // Legend
+    if (hasMCTS) {
+      const legend = document.createElement('div');
+      legend.style.cssText = 'display:flex;gap:12px;font-size:0.72rem;color:var(--text-dim);margin-bottom:6px;width:100%';
+      legend.innerHTML =
+        '<span><span style="display:inline-block;width:10px;height:10px;background:var(--accent);border-radius:2px;margin-right:3px"></span>NN prior</span>' +
+        '<span><span style="display:inline-block;width:10px;height:10px;background:var(--accent2);border-radius:2px;margin-right:3px"></span>MCTS visits</span>';
+      strip.appendChild(legend);
+    }
+
     entries.forEach(({ a, p }, i) => {
-      const h   = Math.round((p / maxP) * BAR_H);
+      const hNN = Math.round((p / maxP) * BAR_H);
       const lbl = anActionLabel(a);
       const pct = (p * 100).toFixed(1);
       const div = document.createElement('div');
       div.className = 'policy-bar' + (i === 0 ? ' top-action' : '');
-      div.innerHTML = `
-        <div style="height:${BAR_H}px;display:flex;align-items:flex-end">
-          <div class="bar-inner" style="height:${h}px" title="${lbl}: ${pct}%"></div>
-        </div>
-        <div>${pct}%</div>
-        <div>${lbl}</div>`;
+
+      if (hasMCTS) {
+        const mp   = data.mcts_policies[a] ?? 0;
+        const hM   = Math.round((mp / maxM) * BAR_H);
+        const mpct = (mp * 100).toFixed(1);
+        div.innerHTML = `
+          <div class="bars-pair" style="height:${BAR_H}px">
+            <div class="bar-nn"   style="height:${hNN}px" title="NN: ${pct}%"></div>
+            <div class="bar-mcts" style="height:${hM}px"  title="MCTS: ${mpct}%"></div>
+          </div>
+          <div>${pct}%</div>
+          <div style="color:var(--accent2)">${mpct}%</div>
+          <div>${lbl}</div>`;
+      } else {
+        div.innerHTML = `
+          <div style="height:${BAR_H}px;display:flex;align-items:flex-end">
+            <div class="bar-inner" style="height:${hNN}px" title="${lbl}: ${pct}%"></div>
+          </div>
+          <div>${pct}%</div>
+          <div>${lbl}</div>`;
+      }
+
       div.addEventListener('mouseenter', () => board.setExternalHover(actionToHoverInfo(a, isFP)));
       div.addEventListener('mouseleave', () => board.clearExternalHover());
       div.addEventListener('click', () => {
         if (!gameActive || !gameState || gameState.done) return;
-        const humanTurn = (gameState.is_p1_turn && humanSide === 1) ||
+        const humanTurn = gameMode === 'vs_human' ||
+                          (gameState.is_p1_turn && humanSide === 1) ||
                           (!gameState.is_p1_turn && humanSide === 2);
         if (!humanTurn) return;
         if (!(gameState.legal || []).includes(a)) return;
         board.clearExternalHover();
-        const intermediate = applyHumanMoveLocally(gameState, a, humanSide);
+        const es = gameMode === 'vs_human' ? (gameState.is_p1_turn ? 1 : 2) : humanSide;
+        const intermediate = applyHumanMoveLocally(gameState, a, es);
         renderGame(intermediate);
         sendMove(a);
       });
@@ -346,6 +453,25 @@ function anActionLabel(a) {
   if (a < N * N)     return `(${Math.floor(a / N)},${a % N})`;
   if (a < N * N + W) return `H${a - N * N}`;
   return `V${a - N * N - W}`;
+}
+
+/** Run MCTS analysis on demand for the current game position. */
+async function runMCTSAnalysis() {
+  if (!gameState || !analysisEnabled) return;
+  const rollouts = parseInt(document.getElementById('rollout-select').value, 10);
+  await fetchAndRenderAnalysis(gameState, rollouts);
+}
+
+let autoMCTS = false;
+function toggleAutoMCTS() {
+  autoMCTS = !autoMCTS;
+  const btn = document.getElementById('btn-mcts-auto');
+  btn.textContent = autoMCTS ? 'Auto MCTS: On' : 'Auto MCTS: Off';
+  btn.classList.toggle('btn-primary', autoMCTS);
+}
+
+function getAnalysisRollouts() {
+  return autoMCTS ? parseInt(document.getElementById('rollout-select').value, 10) : 0;
 }
 
 /** Convert policy action (current-player frame) → board external-hover descriptor. */
