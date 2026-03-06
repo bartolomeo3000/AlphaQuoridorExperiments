@@ -13,7 +13,7 @@ from copy import deepcopy
 import random
 
 from config import (
-    PV_EVALUATE_COUNT, DIRICHLET_ALPHA, DIRICHLET_EPSILON, POSITION_PRIOR_BOOST, BFS_MOVE_BOOST, BFS_MOVE_PENALTY,
+    PV_EVALUATE_COUNT, C_PUCT, DIRICHLET_ALPHA, DIRICHLET_EPSILON, POSITION_PRIOR_BOOST, BFS_MOVE_BOOST, BFS_MOVE_PENALTY, BFS_ADVANCE_FLOOR,
 )
 
 # Inference
@@ -56,6 +56,21 @@ def predict(model, state):
                     policies[i] *= BFS_MOVE_PENALTY
 
     policies /= np.sum(policies) if np.sum(policies) else 1  # normalise to sum to 1
+
+    # Floor: guarantee each advancing pawn move a minimum probability share,
+    # then renormalise again. Fixes cases where the NN assigns near-zero prior
+    # to an advancing move — multiplication alone cannot rescue a true zero.
+    if BFS_ADVANCE_FLOOR > 0.0:
+        walls_t = tuple(state.walls)  # may already be computed above; compute again if not
+        if not (BFS_MOVE_BOOST != 1.0 or BFS_MOVE_PENALTY != 1.0):
+            h_e, v_e = _get_blocked_edges(N, walls_t)
+            dist = _bfs_goal_distances(N, h_e, v_e, 0)
+            current_dist = dist[state.player[0]]
+        for i, action in enumerate(legal):
+            if action < N * N and dist[action] < current_dist:
+                if policies[i] < BFS_ADVANCE_FLOOR:
+                    policies[i] = BFS_ADVANCE_FLOOR
+        policies /= np.sum(policies)
 
     # Get value
     value = v[0][0].cpu().item()
@@ -120,7 +135,6 @@ def pv_mcts_scores(model, state, temperature, add_noise=False, use_q_selection=F
         # Get child node with the maximum arc evaluation value
         def next_child_node(self):
             # Calculate arc evaluation value
-            C_PUCT = 1.0
             t = sum(nodes_to_scores(self.child_nodes))
             pucb_values = []
             for child_node in self.child_nodes:
@@ -195,7 +209,6 @@ def pv_mcts_full(model, state, rollouts):
             return value
 
         def next_child_node(self):
-            C_PUCT = 1.0
             t = sum(c.n for c in self.child_nodes)
             return self.child_nodes[np.argmax([
                 (-c.w / c.n if c.n else 0.0) + C_PUCT * c.p * sqrt(t) / (1 + c.n)

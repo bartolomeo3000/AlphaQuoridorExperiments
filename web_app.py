@@ -103,12 +103,19 @@ def _state_to_display(state: State) -> dict:
         else:
             winner = 'draw'
 
+    # BFS distances — always in absolute (P1/P2) terms
+    p_dist, e_dist = state.bfs_distances()
+    p1_bfs_dist = p_dist if is_fp else e_dist
+    p2_bfs_dist = e_dist if is_fp else p_dist
+
     return {
         'N': N,
         'p1_pos': p1_pos,
         'p1_walls_left': p1_walls_left,
+        'p1_bfs_dist': p1_bfs_dist,
         'p2_pos': p2_pos,
         'p2_walls_left': p2_walls_left,
+        'p2_bfs_dist': p2_bfs_dist,
         'walls': walls_abs,       # 36-int list, P1-absolute frame
         'depth': state.depth,
         'is_p1_turn': is_fp,

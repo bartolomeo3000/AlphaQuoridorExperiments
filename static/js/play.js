@@ -339,10 +339,8 @@ async function fetchAndRenderAnalysis(state, mcts_rollouts = 0) {
     mctsChip.style.display = 'none';
   }
 
-  const p1r = Math.floor(state.p1_pos / N), p1c = state.p1_pos % N;
-  const p2r = Math.floor(state.p2_pos / N), p2c = state.p2_pos % N;
-  document.getElementById('an-p1bfs').textContent = data.p_bfs?.[p1r]?.[p1c] ?? '—';
-  document.getElementById('an-p2bfs').textContent = data.e_bfs?.[p2r]?.[p2c] ?? '—';
+  document.getElementById('an-p1bfs').textContent = state.p1_bfs_dist ?? '—';
+  document.getElementById('an-p2bfs').textContent = state.p2_bfs_dist ?? '—';
   document.getElementById('an-legal').textContent = data.legal_actions?.length ?? '—';
 
   // Policy strip

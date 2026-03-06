@@ -26,6 +26,7 @@ EN_DRAW_DISTANCE_SCORING = False # Score draws by BFS distance instead of flat 0
 
 # ── MCTS ──────────────────────────────────────────────────────────────────────
 PV_EVALUATE_COUNT  = 400    # Simulations per move during training
+C_PUCT             = 1.25   # Exploration constant in PUCT formula (AlphaZero: ~1.25)
 DIRICHLET_ALPHA    = 0.15   # Noise concentration — smaller = spread out more (Go: 0.03, Chess: 0.3)
 DIRICHLET_EPSILON  = 0.25   # Fraction of prior replaced by noise (AlphaZero default; bump to 0.40 if opening entropy collapses)
 POSITION_PRIOR_BOOST = 3.0  # Scale position-move priors before renormalising
@@ -34,6 +35,10 @@ BFS_MOVE_BOOST       = 20.0   # Extra multiplier (on top of POSITION_PRIOR_BOOST
                              # that reduce BFS distance to the goal row. Set to 1.0 to disable.
 BFS_MOVE_PENALTY     = 0.1   # Multiplier applied to pawn moves that INCREASE BFS distance to goal.
                              # Stacks with POSITION_PRIOR_BOOST. Set to 1.0 to disable.
+BFS_ADVANCE_FLOOR    = 0.10  # After all boosts+renorm, ensure each advancing pawn move has at least
+                             # this probability share. Applied per-move then renormed again.
+                             # Fixes near-zero NN priors that survive multiplication.
+                             # Set to 0.0 to disable.
 
 # ── Self-play ─────────────────────────────────────────────────────────────────
 SP_GAME_COUNT  = 300    # Games generated per self-play phase  (AlphaZero paper: 25 000)
