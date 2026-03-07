@@ -19,6 +19,29 @@
   <div class="stat-chip"><div class="label">vs Greedy</div><div class="value" id="s-greedy">—</div></div>
   <div class="stat-chip"><div class="label">Avg Game Len</div><div class="value" id="s-gamelen">—</div></div>
   <div class="stat-chip"><div class="label">Opening Entropy</div><div class="value" id="s-entropy">—</div></div>
+  <div class="stat-chip"><div class="label">Resign %</div><div class="value" id="s-resign">—</div></div>
+  <div class="stat-chip"><div class="label">False Resign</div><div class="value" id="s-false-resign">—</div></div>
+</div>
+
+<div class="training-control">
+  <div class="tc-top">
+    <div class="tc-status">
+      <span class="label">Training</span>
+      <span id="tc-badge" class="badge badge-idle">Idle</span>
+      <span id="tc-cycle" class="text-dim" style="font-size:0.8rem"></span>
+    </div>
+    <div class="tc-buttons">
+      <button class="btn btn-green" id="btn-train-start" onclick="startTraining()">&#9654; Start</button>
+      <button class="btn" id="btn-train-stop" onclick="stopTraining()" disabled>&#9208; Stop after cycle</button>
+      <button class="btn btn-danger" id="btn-train-kill" onclick="killTraining()" disabled>&#9632; Kill now</button>
+    </div>
+  </div>
+  <div id="tc-log" class="tc-log"></div>
+</div>
+
+<div class="stats-table-wrap chart-card" style="padding:16px 18px">
+  <h3>Cycle History</h3>
+  <div id="stats-table-inner"><em style="color:var(--text-dim)">Loading…</em></div>
 </div>
 
 <div class="charts-grid">
@@ -26,6 +49,7 @@
   <div class="chart-card"><h3>Opening Entropy &amp; Top-1 Freq</h3><canvas id="c-entropy"></canvas></div>
   <div class="chart-card"><h3>Eval Opening Entropy &amp; Top-1 Freq</h3><canvas id="c-en-entropy"></canvas></div>
   <div class="chart-card"><h3>Avg Game Length &amp; Walls Placed</h3><canvas id="c-gamelen"></canvas></div>
+  <div class="chart-card"><h3>Resign Rate &amp; False-Resign Count</h3><canvas id="c-resign"></canvas></div>
   <div class="chart-card"><h3>Eval Score vs Best</h3><canvas id="c-eval"></canvas></div>
   <div class="chart-card"><h3>Training Loss</h3><canvas id="c-loss"></canvas></div>
   <div class="chart-card"><h3>Benchmark Win Rate</h3><canvas id="c-bench"></canvas></div>

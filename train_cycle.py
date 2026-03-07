@@ -16,6 +16,12 @@ import sys
 import os
 import time
 
+STOP_FLAG_FILENAME = '.stop_requested'
+
+def _stop_flag_path():
+    from config import LOGS_DIR
+    return os.path.join(LOGS_DIR, STOP_FLAG_FILENAME)
+
 
 class _Tee:
     """Write to both the original stdout and a log file simultaneously."""
@@ -43,7 +49,7 @@ NUM_TRAIN_CYCLE = 30
 _CSV_HEADERS = [
     'cycle', 'timestamp',
     'sp_W_pct', 'sp_D_pct', 'sp_L_pct', 'sp_positions', 'sp_unique', 'sp_entropy', 'sp_top1',
-    'sp_avg_game_len', 'sp_avg_walls',
+    'sp_avg_game_len', 'sp_avg_walls', 'sp_resign_pct', 'sp_false_resign',
     'loss', 'loss_policy', 'loss_value',
     'eval_score', 'promoted',
     'en_entropy', 'en_unique', 'en_top1',
@@ -135,8 +141,10 @@ def _run(stats_path):
             'sp_unique':        sp_stats.get('unique', ''),
             'sp_entropy':       sp_stats.get('entropy', ''),
             'sp_top1':          sp_stats.get('top1_count', ''),
-            'sp_avg_game_len':  sp_stats.get('avg_game_len', ''),
-            'sp_avg_walls':     sp_stats.get('avg_walls', ''),
+            'sp_avg_game_len':    sp_stats.get('avg_game_len', ''),
+            'sp_avg_walls':       sp_stats.get('avg_walls', ''),
+            'sp_resign_pct':      sp_stats.get('resign_pct', ''),
+            'sp_false_resign':    sp_stats.get('false_resign_count', ''),
             'loss':         tr_stats.get('loss', ''),
             'loss_policy':  tr_stats.get('loss_policy', ''),
             'loss_value':   tr_stats.get('loss_value', ''),
@@ -154,6 +162,16 @@ def _run(stats_path):
             't_evalbest_min':  round(t_bp, 1),
             't_cycle_min':     round(cycle_elapsed / 60, 1),
         })
+
+        # Check for graceful-stop flag written by the web dashboard
+        stop_flag = _stop_flag_path()
+        if os.path.exists(stop_flag):
+            try:
+                os.remove(stop_flag)
+            except OSError:
+                pass
+            print('[training] Stop flag detected — exiting after this cycle.')
+            break
 
 
 # Main function

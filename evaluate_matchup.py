@@ -28,7 +28,7 @@ import multiprocessing as mp
 from game import State, _get_blocked_edges, _bfs_goal_distances
 from dual_network import DualNetwork, DN_INPUT_SHAPE, DN_OUTPUT_SIZE, load_model
 from config import (
-    MODEL_DIR, EN_TEMPERATURE, EN_TEMP_CUTOFF,
+    MODEL_DIR, EN_TEMPERATURE, EN_TEMP_CUTOFF, EN_FORCED_OPENING,
     POSITION_PRIOR_BOOST, BFS_MOVE_BOOST,
     PV_EVALUATE_COUNT, C_PUCT, DIRICHLET_ALPHA,
 )
@@ -132,7 +132,7 @@ def mcts_scores_boosted(model, state, temperature, pos_boost, bfs_boost, sims):
 # ── Worker (must be top-level for multiprocessing spawn on Windows) ───────────
 
 def _worker(args):
-    sd_bytes_a, sd_bytes_b, game_idx, pos_boost_a, bfs_boost_a, pos_boost_b, bfs_boost_b, sims_a, sims_b, temperature, temp_cutoff = args
+    sd_bytes_a, sd_bytes_b, game_idx, pos_boost_a, bfs_boost_a, pos_boost_b, bfs_boost_b, sims_a, sims_b, temperature, temp_cutoff, opening_actions = args
 
     model_a = DualNetwork()
     model_a.load_state_dict(torch.load(io.BytesIO(sd_bytes_a), map_location='cpu'))
@@ -146,13 +146,25 @@ def _worker(args):
 
     state = State()
     move_count = 0
+    all_actions = []
+
+    # Replay the pre-generated opening (same for both games in a pair;
+    # even game_idx = A first, odd = B first — bias cancels within pair).
+    for action in opening_actions:
+        if state.is_done():
+            break
+        state = state.next(action)
+        all_actions.append(int(action))
+        move_count += 1
+
     while not state.is_done():
         t = temperature if move_count < temp_cutoff else 0.0
         if state.is_first_player() == a_is_first:
             scores = mcts_scores_boosted(model_a, deepcopy(state), t, pos_boost_a, bfs_boost_a, sims_a)
         else:
             scores = mcts_scores_boosted(model_b, deepcopy(state), t, pos_boost_b, bfs_boost_b, sims_b)
-        action = np.random.choice(state.legal_actions(), p=scores)
+        action = int(np.random.choice(state.legal_actions(), p=scores))
+        all_actions.append(action)
         state = state.next(action)
         move_count += 1
 
@@ -164,7 +176,104 @@ def _worker(args):
         a_won = (first_player_won == a_is_first)
         point_a = 1.0 if a_won else 0.0
 
-    return point_a, move_count
+    return point_a, move_count, all_actions, a_is_first
+
+
+# ── Callable API for the web dashboard ──────────────────────────────────────
+
+def run_matchup(cfg, on_game=None, cancel_flag=None):
+    """
+    Run a matchup and stream results via on_game callback.
+
+    cfg keys:
+        model_a, model_b  — absolute paths to .pt files
+        games             — total games (must be even for pairing)
+        pos_a, bfs_a, sims_a
+        pos_b, bfs_b, sims_b
+
+    on_game(game_dict) is called from the pool thread for each completed game.
+    cancel_flag is a threading.Event; if set, the pool is terminated early.
+    Returns a summary dict.
+    """
+    def _to_bytes(path):
+        m = load_model(path)
+        buf = io.BytesIO()
+        torch.save(m.state_dict(), buf)
+        del m
+        return buf.getvalue()
+
+    sd_bytes_a = _to_bytes(cfg['model_a'])
+    sd_bytes_b = _to_bytes(cfg['model_b'])
+
+    pos_a  = cfg.get('pos_a',  POSITION_PRIOR_BOOST)
+    bfs_a  = cfg.get('bfs_a',  BFS_MOVE_BOOST)
+    sims_a = cfg.get('sims_a', PV_EVALUATE_COUNT)
+    pos_b  = cfg.get('pos_b',  POSITION_PRIOR_BOOST)
+    bfs_b  = cfg.get('bfs_b',  BFS_MOVE_BOOST)
+    sims_b = cfg.get('sims_b', PV_EVALUATE_COUNT)
+
+    n_pairs = cfg['games'] // 2
+    worker_args = []
+    for pair_idx in range(n_pairs):
+        state = State()
+        opening_actions = []
+        for _ in range(EN_FORCED_OPENING):
+            if state.is_done():
+                break
+            action = int(np.random.choice(state.legal_actions()))
+            opening_actions.append(action)
+            state = state.next(action)
+        for _, game_idx in enumerate([pair_idx * 2, pair_idx * 2 + 1]):
+            worker_args.append((
+                sd_bytes_a, sd_bytes_b, game_idx,
+                pos_a, bfs_a, pos_b, bfs_b,
+                sims_a, sims_b,
+                EN_TEMPERATURE, EN_TEMP_CUTOFF,
+                opening_actions,
+            ))
+
+    pool = mp.Pool()
+    wins_a = draws = wins_b = 0
+    cancelled = False
+
+    for point_a, plies, all_actions, a_is_first in pool.imap_unordered(_worker, worker_args):
+        if point_a > 0.6:
+            wins_a += 1
+            result = 'a_win'
+        elif point_a < 0.4:
+            wins_b += 1
+            result = 'b_win'
+        else:
+            draws += 1
+            result = 'draw'
+
+        if on_game:
+            on_game({
+                'actions':  all_actions,
+                'a_first':  a_is_first,
+                'result':   result,
+                'plies':    plies,
+            })
+
+        if cancel_flag and cancel_flag.is_set():
+            pool.terminate()
+            cancelled = True
+            break
+
+    if not cancelled:
+        pool.close()
+    pool.join()
+
+    completed = wins_a + draws + wins_b
+    score_a = (wins_a + 0.5 * draws) / completed if completed else 0.0
+    score_b = (wins_b + 0.5 * draws) / completed if completed else 0.0
+    return {
+        'wins_a': wins_a, 'draws': draws, 'wins_b': wins_b,
+        'completed': completed, 'total': cfg['games'],
+        'score_a': round(score_a, 4),
+        'score_b': round(score_b, 4),
+        'cancelled': cancelled,
+    }
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
@@ -213,22 +322,33 @@ def main():
     torch.save(load_model(model_path_b).state_dict(), buf_b)
     sd_bytes_b = buf_b.getvalue()
 
-    worker_args = [
-        (
-            sd_bytes_a, sd_bytes_b, i,
-            pos_boost_a, bfs_boost_a,
-            pos_boost_b, bfs_boost_b,
-            sims_a, sims_b,
-            EN_TEMPERATURE, EN_TEMP_CUTOFF,
-        )
-        for i in range(args.games)
-    ]
+    # Pre-generate n_pairs opening sequences; each played twice (A first, B first)
+    n_pairs = args.games // 2
+    worker_args = []
+    for pair_idx in range(n_pairs):
+        state = State()
+        opening_actions = []
+        for _ in range(EN_FORCED_OPENING):
+            if state.is_done():
+                break
+            action = int(np.random.choice(state.legal_actions()))
+            opening_actions.append(action)
+            state = state.next(action)
+        for side, game_idx in enumerate([pair_idx * 2, pair_idx * 2 + 1]):
+            worker_args.append((
+                sd_bytes_a, sd_bytes_b, game_idx,
+                pos_boost_a, bfs_boost_a,
+                pos_boost_b, bfs_boost_b,
+                sims_a, sims_b,
+                EN_TEMPERATURE, EN_TEMP_CUTOFF,
+                opening_actions,
+            ))
 
     pool = mp.Pool()
     completed = wins_a = draws = wins_b = 0
     total_plies = 0
 
-    for point_a, plies in pool.imap_unordered(_worker, worker_args):
+    for point_a, plies, all_actions, a_is_first in pool.imap_unordered(_worker, worker_args):
         completed += 1
         total_plies += plies
         if point_a > 0.6:

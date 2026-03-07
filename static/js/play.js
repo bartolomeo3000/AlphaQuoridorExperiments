@@ -370,7 +370,8 @@ async function fetchAndRenderAnalysis(state, mcts_rollouts = 0) {
       legend.style.cssText = 'display:flex;gap:12px;font-size:0.72rem;color:var(--text-dim);margin-bottom:6px;width:100%';
       legend.innerHTML =
         '<span><span style="display:inline-block;width:10px;height:10px;background:var(--accent);border-radius:2px;margin-right:3px"></span>NN prior</span>' +
-        '<span><span style="display:inline-block;width:10px;height:10px;background:var(--accent2);border-radius:2px;margin-right:3px"></span>MCTS visits</span>';
+        '<span><span style="display:inline-block;width:10px;height:10px;background:var(--accent2);border-radius:2px;margin-right:3px"></span>MCTS visits</span>' +
+        '<span><span style="display:inline-block;width:10px;height:10px;background:#f5a623;border-radius:2px;margin-right:3px"></span>MCTS Q (win%)</span>';
       strip.appendChild(legend);
     }
 
@@ -385,13 +386,19 @@ async function fetchAndRenderAnalysis(state, mcts_rollouts = 0) {
         const mp   = data.mcts_policies[a] ?? 0;
         const hM   = Math.round((mp / maxM) * BAR_H);
         const mpct = (mp * 100).toFixed(1);
+        const qRaw  = data.mcts_q_values?.[a];
+        const qProb = qRaw != null ? (qRaw + 1) / 2 : null;
+        const hQ    = qProb != null ? Math.round(qProb * BAR_H) : 2;
+        const qpct  = qProb != null ? (qProb * 100).toFixed(1) + '%' : '\u2014';
         div.innerHTML = `
           <div class="bars-pair" style="height:${BAR_H}px">
             <div class="bar-nn"   style="height:${hNN}px" title="NN: ${pct}%"></div>
             <div class="bar-mcts" style="height:${hM}px"  title="MCTS: ${mpct}%"></div>
+            <div class="bar-q"    style="height:${hQ}px;opacity:${qProb != null ? 1 : 0.25}" title="Q: ${qpct}"></div>
           </div>
           <div>${pct}%</div>
           <div style="color:var(--accent2)">${mpct}%</div>
+          <div style="color:#f5a623">${qpct}</div>
           <div>${lbl}</div>`;
       } else {
         div.innerHTML = `

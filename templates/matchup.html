@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% block title %}Matchup{% endblock %}
+
+{% block content %}
+<h1 class="page-title">Model Matchup</h1>
+
+<!-- ── Config panel ────────────────────────────────────────────────── -->
+<div class="matchup-config card">
+  <div class="matchup-models">
+    <!-- Model A -->
+    <div class="matchup-side">
+      <h3>Model A</h3>
+      <label>Model file
+        <select id="ma-model"></select>
+      </label>
+      <label>Pos boost
+        <input type="number" id="ma-pos"  step="0.1" min="0" value="3.0">
+      </label>
+      <label>BFS boost
+        <input type="number" id="ma-bfs"  step="0.1" min="0" value="3.0">
+      </label>
+      <label>Simulations
+        <input type="number" id="ma-sims" step="50"  min="1" value="400">
+      </label>
+    </div>
+
+    <!-- VS divider -->
+    <div class="matchup-vs">VS</div>
+
+    <!-- Model B -->
+    <div class="matchup-side">
+      <h3>Model B</h3>
+      <label>Model file
+        <select id="mb-model"></select>
+      </label>
+      <label>Pos boost
+        <input type="number" id="mb-pos"  step="0.1" min="0" value="3.0">
+      </label>
+      <label>BFS boost
+        <input type="number" id="mb-bfs"  step="0.1" min="0" value="3.0">
+      </label>
+      <label>Simulations
+        <input type="number" id="mb-sims" step="50"  min="1" value="400">
+      </label>
+    </div>
+  </div>
+
+  <!-- Run controls -->
+  <div class="matchup-run-row">
+    <label>Games (even)
+      <input type="number" id="m-games" min="2" step="2" value="20" style="width:70px">
+    </label>
+    <button class="btn btn-primary" id="btn-run"    onclick="startMatchup()">&#9654; Run</button>
+    <button class="btn btn-danger"  id="btn-cancel" onclick="cancelMatchup()" disabled>&#9632; Cancel</button>
+    <span id="m-status-text" class="text-dim" style="font-size:0.88rem"></span>
+  </div>
+</div>
+
+<!-- ── Live score ─────────────────────────────────────────────────── -->
+<div class="matchup-score-row" id="score-row" style="display:none">
+  <div class="matchup-score-block" id="score-a">
+    <div class="score-label" id="label-a">Model A</div>
+    <div class="score-value" id="val-a">0</div>
+    <div class="score-sublabel" id="record-a">—</div>
+  </div>
+  <div class="matchup-score-mid">
+    <div class="progress-wrap">
+      <div class="progress-bar" id="prog-bar" style="width:50%"></div>
+    </div>
+    <div class="text-dim" style="font-size:0.8rem" id="prog-label">0 / 0</div>
+  </div>
+  <div class="matchup-score-block" id="score-b">
+    <div class="score-label" id="label-b">Model B</div>
+    <div class="score-value" id="val-b">0</div>
+    <div class="score-sublabel" id="record-b">—</div>
+  </div>
+</div>
+
+<!-- ── Replay section ─────────────────────────────────────────────── -->
+<div class="replay-layout" id="replay-section" style="display:none">
+  <!-- Sidebar: game list -->
+  <div class="sidebar">
+    <h3>Games</h3>
+    <ul class="game-list" id="m-game-list"></ul>
+  </div>
+
+  <!-- Board -->
+  <div class="board-wrap">
+    <canvas id="board"></canvas>
+    <div class="replay-controls">
+      <button id="btn-prev">◀ Prev</button>
+      <button id="btn-play" style="min-width:80px">▶ Play</button>
+      <button id="btn-next">Next ▶</button>
+      <span class="text-dim" style="font-size:0.82rem">Speed:</span>
+      <input type="range" id="speed-slider" min="1" max="10" value="4" style="width:90px">
+      <span class="text-dim font-mono" id="step-label" style="font-size:0.82rem">— / —</span>
+    </div>
+  </div>
+
+  <!-- Game info -->
+  <div style="min-width:200px">
+    <div class="card">
+      <div class="card-title">Selected Game</div>
+      <div id="game-info" class="text-dim" style="font-size:0.88rem">Select a game from the list.</div>
+    </div>
+    <div class="card mt-10">
+      <div class="card-title">Move Info</div>
+      <div id="move-info" class="font-mono text-dim" style="font-size:0.82rem">—</div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/matchup.js"></script>
+{% endblock %}

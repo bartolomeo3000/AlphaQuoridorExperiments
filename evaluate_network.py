@@ -8,7 +8,7 @@ from game import State
 from pv_mcts import pv_mcts_action, pv_mcts_scores
 from dual_network import load_model, DualNetwork, DN_OUTPUT_SIZE
 from config import (
-    EN_GAME_COUNT, EN_TEMPERATURE, EN_TEMP_CUTOFF,
+    EN_GAME_COUNT, EN_TEMPERATURE, EN_TEMP_CUTOFF, EN_FORCED_OPENING,
     EN_PROMOTE_THRESHOLD, EN_DRAW_DISTANCE_SCORING, DRAW_SHAPE_SCALE,
     MODEL_DIR, USE_BFS_CHANNELS, OPENING_DEPTH, LOGS_DIR,
 )
@@ -82,7 +82,7 @@ def update_best_player():
 # Returns (point_for_model0, game_history) where game_history is
 # a list of (pieces_array, policy_vector, value) tuples suitable for training.
 def _eval_worker(args):
-    sd0_bytes, sd1_bytes, game_idx = args
+    sd0_bytes, sd1_bytes, game_idx, opening_actions = args
 
     model0 = DualNetwork()
     model0.load_state_dict(torch.load(io.BytesIO(sd0_bytes), map_location='cpu'))
@@ -105,6 +105,17 @@ def _eval_worker(args):
     move_count = 0
     opening = []
     actions = []
+
+    # Replay the pre-generated opening (same sequence for both games in a pair;
+    # game_idx even = model0 first, odd = model1 first — bias cancels within pair).
+    for action in opening_actions:
+        if state.is_done():
+            break
+        state = state.next(action)
+        actions.append(action)
+        move_count += 1
+        if move_count <= OPENING_DEPTH:
+            opening.append(action)
 
     while True:
         if state.is_done():
@@ -167,9 +178,23 @@ def evaluate_network(cycle_num=None):
     sd0_bytes = to_bytes(os.path.join(MODEL_DIR, 'latest.pt'))
     sd1_bytes = to_bytes(os.path.join(MODEL_DIR, 'best.pt'))
 
-    args = [(sd0_bytes, sd1_bytes, i) for i in range(EN_GAME_COUNT)]
+    # Pre-generate EN_GAME_COUNT/2 opening sequences; each is played twice
+    # (model0 first, then model1 first) so any positional advantage cancels.
+    n_pairs = EN_GAME_COUNT // 2
+    args = []
+    for pair_idx in range(n_pairs):
+        state = State()
+        opening_actions = []
+        for _ in range(EN_FORCED_OPENING):
+            if state.is_done():
+                break
+            action = int(np.random.choice(state.legal_actions()))
+            opening_actions.append(action)
+            state = state.next(action)
+        args.append((sd0_bytes, sd1_bytes, pair_idx * 2,     opening_actions))  # model0 first
+        args.append((sd0_bytes, sd1_bytes, pair_idx * 2 + 1, opening_actions))  # model1 first
 
-    print(f'Evaluate: {EN_GAME_COUNT} games across workers...')
+    print(f'Evaluate: {EN_GAME_COUNT} games ({n_pairs} paired openings) across workers...')
     pool = _get_pool()
     results = []
     points = []

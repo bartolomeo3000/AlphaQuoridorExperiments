@@ -136,6 +136,65 @@ nav.topnav a.active {
   gap: 18px;
 }
 
+/* ── Stats History Table ────────────────────────── */
+.stats-table-wrap {
+  margin-bottom: 24px;
+  overflow-x: auto;
+}
+
+.stats-table-wrap h3 {
+  font-size: 0.85rem;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 10px;
+}
+
+.stats-table-scroll {
+  max-height: 320px;
+  overflow-y: auto;
+  overflow-x: auto;
+}
+
+.stats-history-table {
+  border-collapse: collapse;
+  font-size: 0.82rem;
+  width: 100%;
+  min-width: 900px;
+}
+
+.stats-history-table th {
+  background: var(--bg3);
+  color: var(--text-dim);
+  font-weight: 600;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+  text-align: right;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.stats-history-table th:first-child { text-align: left; }
+
+.stats-history-table td {
+  padding: 5px 10px;
+  border-bottom: 1px solid var(--border);
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.stats-history-table td:first-child { text-align: left; }
+
+.stats-history-table tr:last-child td { border-bottom: none; }
+
+.stats-history-table tr:hover td { filter: brightness(1.15); }
+
 .chart-card {
   background: var(--bg2);
   border: 1px solid var(--border);
@@ -205,6 +264,7 @@ canvas#board {
   border-color: var(--loss);
   color: #fff;
 }
+.btn:disabled { opacity: 0.35; cursor: default; }
 
 /* ── Game result badges ─────────────────────────── */
 .badge {
@@ -218,6 +278,62 @@ canvas#board {
 .badge-win  { background: #1a4a30; color: var(--win); }
 .badge-loss { background: #4a1a22; color: var(--loss); }
 .badge-draw { background: #4a3a12; color: var(--draw); }
+
+/* training-status badge variants */
+.badge-idle     { background: #2a2a2a; color: var(--text-dim); }
+.badge-running  { background: #1a3a1a; color: #5dde5d; }
+.badge-stopping { background: #3a2a0a; color: #e6b840; }
+
+/* btn-green */
+.btn-green {
+  background: #1a3a1a;
+  border-color: #2e6030;
+  color: #5dde5d;
+}
+.btn-green:hover { background: #2e6030; }
+.btn-green:disabled { opacity: 0.35; cursor: default; }
+
+/* ── Training control panel ─────────────────────── */
+.training-control {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 18px;
+  margin-bottom: 20px;
+}
+.tc-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+.tc-top {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  width: 100%;
+}
+.tc-buttons {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.tc-log {
+  width: 100%;
+  font-family: monospace;
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 4px;
+  min-height: 1.1em;
+}
 
 /* ── Game list ──────────────────────────────────── */
 .game-list {
@@ -362,16 +478,15 @@ input[type=range] {
   align-items: flex-end;
   gap: 2px;
 }
-.policy-bar .bar-nn {
-  width: 13px;
-  background: var(--accent);
+.policy-bar .bar-nn,
+.policy-bar .bar-mcts,
+.policy-bar .bar-q {
+  width: 10px;
   border-radius: 3px 3px 0 0;
 }
-.policy-bar .bar-mcts {
-  width: 13px;
-  background: var(--accent2);
-  border-radius: 3px 3px 0 0;
-}
+.policy-bar .bar-nn   { background: var(--accent); }
+.policy-bar .bar-mcts { background: var(--accent2); }
+.policy-bar .bar-q    { background: #f5a623; }
 
 /* ── Value display ──────────────────────────────── */
 .value-display {
@@ -516,3 +631,131 @@ input[type=range] {
 ::-webkit-scrollbar-track { background: var(--bg); }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: #445; }
+
+/* ── Replay source toggle ────────────────────────────────────────── */
+.source-toggle {
+  display: flex;
+  gap: 6px;
+}
+.source-btn {
+  flex: 1;
+  font-size: 0.78rem;
+  padding: 4px 8px;
+}
+.source-btn.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+/* ── Matchup page ───────────────────────────────────────────────── */
+.matchup-config {
+  padding: 16px 20px;
+  margin-bottom: 18px;
+}
+.matchup-models {
+  display: flex;
+  align-items: flex-start;
+  gap: 20px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.matchup-side {
+  flex: 1;
+  min-width: 180px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.matchup-side h3 { margin: 0 0 4px; font-size: 0.95rem; }
+.matchup-side label {
+  display: flex;
+  flex-direction: column;
+  font-size: 0.8rem;
+  color: var(--text-dim);
+  gap: 3px;
+}
+.matchup-side input,
+.matchup-side select {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 5px;
+  padding: 4px 8px;
+  font-size: 0.88rem;
+}
+.matchup-vs {
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: var(--text-dim);
+  align-self: center;
+  padding: 0 4px;
+}
+.matchup-run-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 0.8rem;
+}
+.matchup-run-row label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-dim);
+  font-size: 0.8rem;
+}
+
+/* Score row */
+.matchup-score-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 20px;
+  margin-bottom: 18px;
+}
+.matchup-score-block {
+  flex: 1;
+  text-align: center;
+}
+.score-label {
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.score-value {
+  font-size: 2rem;
+  font-weight: 700;
+  font-family: monospace;
+  color: var(--text);
+  line-height: 1.1;
+}
+.score-sublabel {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+}
+.matchup-score-mid {
+  flex: 1.5;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+.progress-wrap {
+  width: 100%;
+  height: 8px;
+  background: var(--bg3);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.progress-bar {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 4px;
+  transition: width 0.4s ease;
+}

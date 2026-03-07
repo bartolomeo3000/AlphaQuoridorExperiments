@@ -1,0 +1,6 @@
+Logging to ./logs_8ch\20260306_201402.log
+Variant: 8-channel (BFS channels ON)  |  model=./model_8ch  data=./data_8ch
+Resuming from cycle 24
+
+==================== Cycle  24  [20:14:02] ====================
+Self-play 1/300  W:0  D:0  L:1Self-play 2/300  W:1  D:0  L:1Self-play 3/300  W:2  D:0  L:1Self-play 4/300  W:3  D:0  L:1Self-play 5/300  W:3  D:1  L:1Self-play 6/300  W:4  D:1  L:1Self-play 7/300  W:4  D:1  L:2Self-play 8/300  W:5  D:1  L:2Self-play 9/300  W:5  D:1  L:3Self-play 10/300  W:6  D:1  L:3Self-play 11/300  W:7  D:1  L:3Self-play 12/300  W:8  D:1  L:3Self-play 13/300  W:9  D:1  L:3Self-play 14/300  W:10  D:1  L:3Self-play 15/300  W:11  D:1  L:3Self-play 16/300  W:12  D:1  L:3Self-play 17/300  W:13  D:1  L:3Self-play 18/300  W:14  D:1  L:3Self-play 19/300  W:15  D:1  L:3Self-play 20/300  W:16  D:1  L:3Self-play 21/300  W:16  D:1  L:4Self-play 22/300  W:16  D:1  L:5

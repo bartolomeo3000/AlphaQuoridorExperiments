@@ -7,10 +7,24 @@
 <div class="replay-layout">
   <!-- Sidebar: cycle + game selector -->
   <div class="sidebar">
-    <h3>Cycle</h3>
-    <select id="cycle-select" style="width:100%;margin-bottom:12px">
-      <option value="">— pick cycle —</option>
-    </select>
+    <h3>Source</h3>
+    <div class="source-toggle" style="margin-bottom:10px">
+      <button class="btn source-btn active" id="src-eval"    onclick="setSource('eval')">Eval cycles</button>
+      <button class="btn source-btn"        id="src-matchup" onclick="setSource('matchup')">Matchups</button>
+    </div>
+
+    <div id="panel-eval">
+      <select id="cycle-select" style="width:100%;margin-bottom:12px">
+        <option value="">— pick cycle —</option>
+      </select>
+    </div>
+
+    <div id="panel-matchup" style="display:none">
+      <select id="matchup-select" style="width:100%;margin-bottom:12px">
+        <option value="">— pick run —</option>
+      </select>
+      <div id="matchup-meta" class="text-dim" style="font-size:0.78rem;margin-bottom:8px"></div>
+    </div>
 
     <h3>Games</h3>
     <ul class="game-list" id="game-list"></ul>
@@ -39,8 +53,59 @@
       <div class="card-title">Move Info</div>
       <div id="move-info" class="font-mono text-dim" style="font-size:0.82rem">—</div>
     </div>
+    <div class="card mt-10">
+      <div class="card-title">Analysis</div>
+      <button class="btn" id="btn-analysis-toggle" onclick="toggleAnalysis()" style="width:100%;margin-bottom:10px">🔬 Show Analysis</button>
+      <div id="rollout-wrap-replay" style="display:none">
+        <label class="text-dim" style="font-size:0.82rem">Rollouts (MCTS)</label>
+        <select id="rollout-select" style="width:100%;margin:4px 0 8px">
+          <option value="100">100</option>
+          <option value="200">200</option>
+          <option value="400" selected>400</option>
+          <option value="800">800</option>
+        </select>
+        <button class="btn" id="btn-mcts-analyze" onclick="runMCTSAnalysis()" style="width:100%;font-size:0.82rem">Run MCTS Analysis</button>
+        <button class="btn" id="btn-mcts-auto" onclick="toggleAutoMCTS()" style="width:100%;font-size:0.82rem;margin-top:4px">Auto MCTS: Off</button>
+      </div>
+    </div>
   </div>
 </div>
+
+<!-- Analysis panel (full-width, toggleable) -->
+<div id="analysis-panel" class="hidden" style="margin-top:24px">
+  <div style="display:flex;gap:16px;align-items:center;margin-bottom:14px;flex-wrap:wrap">
+    <div class="stat-chip">
+      <div class="label">Value (win prob)</div>
+      <div id="an-value" class="value">—</div>
+    </div>
+    <div class="stat-chip" id="an-mcts-value-chip" style="display:none">
+      <div class="label">MCTS Value (win prob)</div>
+      <div id="an-mcts-value" class="value">—</div>
+    </div>
+    <div class="stat-chip">
+      <div class="label">P1 BFS dist</div>
+      <div id="an-p1bfs" class="value">—</div>
+    </div>
+    <div class="stat-chip">
+      <div class="label">P2 BFS dist</div>
+      <div id="an-p2bfs" class="value">—</div>
+    </div>
+    <div class="stat-chip">
+      <div class="label">Legal actions</div>
+      <div id="an-legal" class="value">—</div>
+    </div>
+    <span id="an-spinner" class="spinner hidden"></span>
+  </div>
+
+  <div class="card">
+    <div class="card-title" id="an-policy-title">Policy — top 15 legal actions by prior</div>
+    <div id="an-policy" class="policy-strip"></div>
+  </div>
+
+  <div class="card-title" style="margin-top:16px">Input Channels</div>
+  <div id="an-heatmaps" class="heatmap-grid"></div>
+</div>
+
 {% endblock %}
 
 {% block scripts %}

@@ -13,7 +13,9 @@ from copy import deepcopy
 import random
 
 from config import (
-    PV_EVALUATE_COUNT, C_PUCT, DIRICHLET_ALPHA, DIRICHLET_EPSILON, POSITION_PRIOR_BOOST, BFS_MOVE_BOOST, BFS_MOVE_PENALTY, BFS_ADVANCE_FLOOR,
+    PV_EVALUATE_COUNT, C_PUCT, DIRICHLET_ALPHA, DIRICHLET_EPSILON, POSITION_PRIOR_BOOST,
+    BFS_MOVE_BOOST, BFS_MOVE_PENALTY, BFS_ADVANCE_FLOOR, BFS_RETREAT_CEILING,
+    FPU_REDUCTION, BFS_PUCT_BONUS,
 )
 
 # Inference
@@ -72,6 +74,23 @@ def predict(model, state):
                     policies[i] = BFS_ADVANCE_FLOOR
         policies /= np.sum(policies)
 
+    # Ceiling: cap each retreating pawn move to prevent the value head from
+    # rescuing a move the policy correctly penalised.
+    if BFS_RETREAT_CEILING < 1.0:
+        if not (BFS_MOVE_BOOST != 1.0 or BFS_MOVE_PENALTY != 1.0 or BFS_ADVANCE_FLOOR > 0.0):
+            walls_t = tuple(state.walls)
+            h_e, v_e = _get_blocked_edges(N, walls_t)
+            dist = _bfs_goal_distances(N, h_e, v_e, 0)
+            current_dist = dist[state.player[0]]
+        capped = False
+        for i, action in enumerate(legal):
+            if action < N * N and dist[action] > current_dist:
+                if policies[i] > BFS_RETREAT_CEILING:
+                    policies[i] = BFS_RETREAT_CEILING
+                    capped = True
+        if capped:
+            policies /= np.sum(policies)
+
     # Get value
     value = v[0][0].cpu().item()
     return policies, value
@@ -84,16 +103,17 @@ def nodes_to_scores(nodes):
     return scores
 
 # Get Monte Carlo Tree Search scores
-def pv_mcts_scores(model, state, temperature, add_noise=False, use_q_selection=False):
+def pv_mcts_scores(model, state, temperature, add_noise=False, use_q_selection=False, return_root_q=False):
     # Define Monte Carlo Tree Search node
     class Node:
         # Initialize node
-        def __init__(self, state, p):
+        def __init__(self, state, p, bfs_delta=0):
             self.state = state # State
             self.p = p # Policy
             self.w = 0 # Cumulative value
             self.n = 0 # Number of simulations
             self.child_nodes = None  # Child nodes
+            self.bfs_delta = bfs_delta  # dist[action] - current_dist; negative = advancing
 
         # Calculate value of the state
         def evaluate(self):
@@ -116,10 +136,21 @@ def pv_mcts_scores(model, state, temperature, add_noise=False, use_q_selection=F
                 self.w += value
                 self.n += 1
 
+                # Compute BFS deltas for pawn moves once at expansion
+                N = self.state.N
+                if BFS_PUCT_BONUS != 0.0:
+                    walls_t = tuple(self.state.walls)
+                    h_e, v_e = _get_blocked_edges(N, walls_t)
+                    dist = _bfs_goal_distances(N, h_e, v_e, 0)
+                    cur = dist[self.state.player[0]]
+                else:
+                    dist = None; cur = 0
+
                 # Expand child nodes
                 self.child_nodes = []
                 for action, policy in zip(self.state.legal_actions(), policies):
-                    self.child_nodes.append(Node(self.state.next(action), policy))
+                    delta = int(dist[action] - cur) if (dist is not None and action < N * N) else 0
+                    self.child_nodes.append(Node(self.state.next(action), policy, delta))
                 return value
 
             # If there are child nodes
@@ -136,10 +167,15 @@ def pv_mcts_scores(model, state, temperature, add_noise=False, use_q_selection=F
         def next_child_node(self):
             # Calculate arc evaluation value
             t = sum(nodes_to_scores(self.child_nodes))
+            fpu = (self.w / self.n - FPU_REDUCTION) if (FPU_REDUCTION is not None and self.n) else 0.0
             pucb_values = []
             for child_node in self.child_nodes:
-                pucb_values.append((-child_node.w / child_node.n if child_node.n else 0.0) +
-                    C_PUCT * child_node.p * sqrt(t) / (1 + child_node.n))
+                q = (-child_node.w / child_node.n if child_node.n else fpu)
+                pucb_values.append(
+                    q
+                    + C_PUCT * child_node.p * sqrt(t) / (1 + child_node.n)
+                    - BFS_PUCT_BONUS * child_node.bfs_delta
+                )
 
             # Return child node with the maximum arc evaluation value
             return self.child_nodes[np.argmax(pucb_values)]
@@ -175,6 +211,9 @@ def pv_mcts_scores(model, state, temperature, add_noise=False, use_q_selection=F
         scores[action] = 1
     else: # Add variation with Boltzmann distribution over visit counts
         scores = boltzman(scores, temperature)
+    if return_root_q:
+        root_q = root_node.w / root_node.n if root_node.n else 0.0
+        return scores, root_q
     return scores
 
 def pv_mcts_full(model, state, rollouts):
@@ -184,12 +223,13 @@ def pv_mcts_full(model, state, rollouts):
     collapses to one-hot) and also returns the root Q value (tanh scale).
     """
     class Node:
-        def __init__(self, state, p):
+        def __init__(self, state, p, bfs_delta=0):
             self.state = state
             self.p = p
             self.w = 0.0
             self.n = 0
             self.child_nodes = None
+            self.bfs_delta = bfs_delta
 
         def evaluate(self):
             if self.state.is_done():
@@ -199,8 +239,17 @@ def pv_mcts_full(model, state, rollouts):
             if not self.child_nodes:
                 policies, value = predict(model, self.state)
                 self.w += value; self.n += 1
+                N = self.state.N
+                if BFS_PUCT_BONUS != 0.0:
+                    walls_t = tuple(self.state.walls)
+                    h_e, v_e = _get_blocked_edges(N, walls_t)
+                    dist = _bfs_goal_distances(N, h_e, v_e, 0)
+                    cur = dist[self.state.player[0]]
+                else:
+                    dist = None; cur = 0
                 self.child_nodes = [
-                    Node(self.state.next(a), p)
+                    Node(self.state.next(a), p,
+                         int(dist[a] - cur) if (dist is not None and a < N * N) else 0)
                     for a, p in zip(self.state.legal_actions(), policies)
                 ]
                 return value
@@ -210,8 +259,11 @@ def pv_mcts_full(model, state, rollouts):
 
         def next_child_node(self):
             t = sum(c.n for c in self.child_nodes)
+            fpu = (self.w / self.n - FPU_REDUCTION) if (FPU_REDUCTION is not None and self.n) else 0.0
             return self.child_nodes[np.argmax([
-                (-c.w / c.n if c.n else 0.0) + C_PUCT * c.p * sqrt(t) / (1 + c.n)
+                (-c.w / c.n if c.n else fpu)
+                + C_PUCT * c.p * sqrt(t) / (1 + c.n)
+                - BFS_PUCT_BONUS * c.bfs_delta
                 for c in self.child_nodes
             ])]
 
@@ -223,7 +275,9 @@ def pv_mcts_full(model, state, rollouts):
     total = visits.sum()
     visit_probs = (visits / total).tolist() if total > 0 else (np.ones(len(visits)) / len(visits)).tolist()
     root_q = root.w / root.n if root.n else 0.0
-    return visit_probs, float(root_q)
+    # Per-child Q from parent's view: positive = good for current player
+    action_q = [float(-c.w / c.n) if c.n else None for c in root.child_nodes]
+    return visit_probs, float(root_q), action_q
 
 
 # Action selection with Monte Carlo Tree Search

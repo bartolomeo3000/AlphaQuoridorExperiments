@@ -7,12 +7,10 @@ from game import State, random_action
 from pv_mcts import pv_mcts_action
 import os
 from dual_network import load_model
-from config import EP_RANDOM_GAMES, EP_GREEDY_GAMES, EP_BFS_GAMES, MODEL_DIR
+from config import EP_RANDOM_GAMES, EP_GREEDY_GAMES, EP_BFS_GAMES, MODEL_DIR, EN_FORCED_OPENING
 from collections import deque
 import numpy as np
 import random
-
-from config import EP_RANDOM_GAMES, EP_GREEDY_GAMES, EP_BFS_GAMES
 
 # Points for the first player
 def first_player_point(ended_state):
@@ -76,9 +74,15 @@ def bfs_forward_action(state):
     return step
 
 # Execute one game
-def play(next_actions):
+def play(next_actions, opening_actions=()):
     # Generate state
     state = State()
+
+    # Replay forced opening before handing off to the agents
+    for action in opening_actions:
+        if state.is_done():
+            break
+        state = state.next(action)
 
     # Loop until the game ends
     while True:
@@ -102,16 +106,29 @@ def evaluate_algorithm_of(label, next_actions, game_count):
         return None
     total_point = 0
     wins = draws = losses = 0
-    for i in range(game_count):
-        if i % 2 == 0:
-            p = play(next_actions)
-        else:
-            p = 1 - play(list(reversed(next_actions)))
-        total_point += p
-        if p == 1.0:   wins   += 1
-        elif p == 0.0: losses += 1
-        else:          draws  += 1
-        print(f'\r{label} {i+1}/{game_count}  W:{wins} D:{draws} L:{losses}', end='')
+    n_pairs = game_count // 2
+    for pair_idx in range(n_pairs):
+        # Pre-generate one opening for both games in this pair
+        state = State()
+        opening_actions = []
+        for _ in range(EN_FORCED_OPENING):
+            if state.is_done():
+                break
+            action = int(np.random.choice(state.legal_actions()))
+            opening_actions.append(action)
+            state = state.next(action)
+
+        for side in range(2):
+            i = pair_idx * 2 + side
+            if side == 0:
+                p = play(next_actions, opening_actions)
+            else:
+                p = 1 - play(list(reversed(next_actions)), opening_actions)
+            total_point += p
+            if p == 1.0:   wins   += 1
+            elif p == 0.0: losses += 1
+            else:          draws  += 1
+            print(f'\r{label} {i+1}/{game_count}  W:{wins} D:{draws} L:{losses}', end='')
     print('')
     average_point = total_point / game_count
     print(f'{label} — W:{wins}  D:{draws}  L:{losses}  Score:{average_point:.2f}')

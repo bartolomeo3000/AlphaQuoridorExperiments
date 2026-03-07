@@ -14,6 +14,9 @@ import csv
 import glob
 import json
 import time
+import threading
+import subprocess
+import sys
 from copy import deepcopy
 
 import numpy as np
@@ -31,6 +34,31 @@ import config as _cfg
 # ── Flask app setup ───────────────────────────────────────────────────────────
 app = Flask(__name__)
 app.secret_key = 'alphaquoridor-dashboard-2026'
+
+# ── Training subprocess ───────────────────────────────────────────────────────
+_train_proc = None
+
+def _stop_flag_path():
+    return os.path.join(LOGS_DIR, '.stop_requested')
+
+def _training_running():
+    return _train_proc is not None and _train_proc.poll() is None
+
+# ── Matchup state (runs in a background thread) ──────────────────────────
+_matchup_lock   = threading.Lock()
+_matchup_cancel = threading.Event()
+_matchup_state  = {
+    'status':    'idle',   # idle | running | done | cancelled
+    'cfg':       None,
+    'wins_a':    0,
+    'draws':     0,
+    'wins_b':    0,
+    'completed': 0,
+    'total':     0,
+    'score_a':   0.0,
+    'score_b':   0.0,
+    'games':     [],       # list of {actions, a_first, result, plies}
+}
 
 # ── Model (loaded once at startup) ───────────────────────────────────────────
 _model = None
@@ -162,6 +190,180 @@ def inspect_page():
 def logs_page():
     return render_template('logs.html')
 
+
+@app.route('/matchup')
+def matchup_page():
+    return render_template('matchup.html')
+
+# ── API: matchup ──────────────────────────────────────────────────────
+
+@app.route('/api/matchup/models')
+def api_matchup_models():
+    """Return list of available model files."""
+    pts = sorted(glob.glob(os.path.join(MODEL_DIR, '*.pt')))
+    saves_dir = MODEL_DIR + '_saves'
+    if os.path.isdir(saves_dir):
+        pts += sorted(glob.glob(os.path.join(saves_dir, '*.pt')))
+    return jsonify([os.path.basename(p) for p in pts])
+
+
+@app.route('/api/matchup/status')
+def api_matchup_status():
+    with _matchup_lock:
+        snap = dict(_matchup_state)
+        snap['games'] = []   # omit game data from status poll (use /api/matchup/games)
+    return jsonify(snap)
+
+
+@app.route('/api/matchup/games')
+def api_matchup_games():
+    with _matchup_lock:
+        games = list(_matchup_state['games'])
+    return jsonify(games)
+
+
+@app.route('/api/matchup/start', methods=['POST'])
+def api_matchup_start():
+    global _matchup_cancel
+    with _matchup_lock:
+        if _matchup_state['status'] == 'running':
+            return jsonify({'error': 'already running'}), 400
+
+    body = request.get_json(force=True)
+
+    def resolve_model(name):
+        if os.path.isabs(name):
+            return name
+        # Try MODEL_DIR first, then saves dir
+        for d in [MODEL_DIR, MODEL_DIR + '_saves']:
+            p = os.path.join(d, name if name.endswith('.pt') else name + '.pt')
+            if os.path.exists(p):
+                return p
+        return None
+
+    path_a = resolve_model(body.get('model_a', 'best'))
+    path_b = resolve_model(body.get('model_b', 'best'))
+    if not path_a or not path_b:
+        return jsonify({'error': f'model not found: {body.get("model_a")} / {body.get("model_b")}'}), 400
+
+    games = max(2, int(body.get('games', 20)) // 2 * 2)  # round to even
+    cfg = {
+        'model_a': path_a, 'model_b': path_b,
+        'games':   games,
+        'pos_a':   float(body.get('pos_a',  _cfg.POSITION_PRIOR_BOOST)),
+        'bfs_a':   float(body.get('bfs_a',  _cfg.BFS_MOVE_BOOST)),
+        'sims_a':  int(body.get('sims_a', _cfg.PV_EVALUATE_COUNT)),
+        'pos_b':   float(body.get('pos_b',  _cfg.POSITION_PRIOR_BOOST)),
+        'bfs_b':   float(body.get('bfs_b',  _cfg.BFS_MOVE_BOOST)),
+        'sims_b':  int(body.get('sims_b', _cfg.PV_EVALUATE_COUNT)),
+    }
+
+    _matchup_cancel = threading.Event()
+    with _matchup_lock:
+        _matchup_state.update({
+            'status': 'running', 'cfg': cfg,
+            'wins_a': 0, 'draws': 0, 'wins_b': 0,
+            'completed': 0, 'total': games,
+            'score_a': 0.0, 'score_b': 0.0,
+            'games': [],
+        })
+
+    def _run():
+        from evaluate_matchup import run_matchup
+
+        def _on_game(g):
+            with _matchup_lock:
+                _matchup_state['games'].append(g)
+                r = g['result']
+                if r == 'a_win':   _matchup_state['wins_a'] += 1
+                elif r == 'b_win': _matchup_state['wins_b'] += 1
+                else:              _matchup_state['draws']  += 1
+                c = _matchup_state['completed'] = (
+                    _matchup_state['wins_a'] + _matchup_state['draws'] + _matchup_state['wins_b']
+                )
+                wa, d, wb = _matchup_state['wins_a'], _matchup_state['draws'], _matchup_state['wins_b']
+                _matchup_state['score_a'] = round((wa + 0.5 * d) / c, 4)
+                _matchup_state['score_b'] = round((wb + 0.5 * d) / c, 4)
+
+        run_matchup(cfg, on_game=_on_game, cancel_flag=_matchup_cancel)
+        with _matchup_lock:
+            _matchup_state['status'] = 'cancelled' if _matchup_cancel.is_set() else 'done'
+            # Persist the run so the Replay tab can browse it later
+            snap = dict(_matchup_state)
+        _save_matchup_replay(cfg, snap)
+
+    t = threading.Thread(target=_run, daemon=True)
+    t.start()
+    return jsonify({'started': True, 'games': games})
+
+
+@app.route('/api/matchup/cancel', methods=['POST'])
+def api_matchup_cancel():
+    with _matchup_lock:
+        if _matchup_state['status'] != 'running':
+            return jsonify({'error': 'not running'}), 400
+    _matchup_cancel.set()
+    return jsonify({'cancelled': True})
+
+
+def _save_matchup_replay(cfg, snap):
+    """Write completed matchup games to LOGS_DIR/matchup_games/<timestamp>.json."""
+    from datetime import datetime
+    mdir = os.path.join(LOGS_DIR, 'matchup_games')
+    os.makedirs(mdir, exist_ok=True)
+    ts   = datetime.now().strftime('%Y%m%d_%H%M%S')
+    path = os.path.join(mdir, f'{ts}.json')
+    ma = os.path.basename(cfg['model_a'])
+    mb = os.path.basename(cfg['model_b'])
+    record = {
+        'label':     f'{ma} vs {mb}',
+        'model_a':   ma,
+        'model_b':   mb,
+        'sims_a':    cfg.get('sims_a'),
+        'sims_b':    cfg.get('sims_b'),
+        'score_a':   snap['score_a'],
+        'score_b':   snap['score_b'],
+        'wins_a':    snap['wins_a'],
+        'draws':     snap['draws'],
+        'wins_b':    snap['wins_b'],
+        'cancelled': snap['status'] == 'cancelled',
+        'games':     snap['games'],
+    }
+    with open(path, 'w', encoding='utf-8') as f:
+        json.dump(record, f)
+
+
+@app.route('/api/matchup_replays')
+def api_matchup_replays():
+    mdir = os.path.join(LOGS_DIR, 'matchup_games')
+    if not os.path.exists(mdir):
+        return jsonify([])
+    result = []
+    for fp in sorted(glob.glob(os.path.join(mdir, '*.json')), reverse=True):
+        name = os.path.basename(fp)
+        try:
+            with open(fp, 'r', encoding='utf-8') as f:
+                meta = json.load(f)
+            result.append({
+                'name':    name,
+                'label':   meta.get('label', name),
+                'score_a': meta.get('score_a'),
+                'score_b': meta.get('score_b'),
+                'games':   len(meta.get('games', [])),
+            })
+        except Exception:
+            continue
+    return jsonify(result)
+
+
+@app.route('/api/matchup_replays/<name>')
+def api_matchup_replay(name):
+    mdir = os.path.join(LOGS_DIR, 'matchup_games')
+    path = os.path.join(mdir, name)
+    if not os.path.exists(path):
+        return jsonify({'error': 'not found'}), 404
+    with open(path, 'r', encoding='utf-8') as f:
+        return jsonify(json.load(f))
 
 # ── API: stats ────────────────────────────────────────────────────────────────
 
@@ -362,10 +564,18 @@ def api_inspect():
     # Optional MCTS forward pass
     mcts_policies = None
     mcts_value    = None
+    mcts_q_values = None
     if mcts_rollouts > 0 and model is not None:
-        visit_probs, root_q = pv_mcts_full(model, deepcopy(state), mcts_rollouts)
+        visit_probs, root_q, action_q = pv_mcts_full(model, deepcopy(state), mcts_rollouts)
         mcts_policies = {int(a): float(p) for a, p in zip(legal, visit_probs)}
         mcts_value    = root_q
+        mcts_q_values = {int(a): q for a, q in zip(legal, action_q) if q is not None}
+
+    # Scalar BFS distances for P1 and P2 — same logic as _state_to_display
+    _p_dist, _e_dist = state.bfs_distances()
+    fp = (depth % 2 == 0)
+    p1_bfs_dist = int(_p_dist if fp else _e_dist)
+    p2_bfs_dist = int(_e_dist if fp else _p_dist)
 
     return jsonify({
         'channels':      channels,
@@ -376,13 +586,106 @@ def api_inspect():
         'value':         value,
         'mcts_policies': mcts_policies,
         'mcts_value':    mcts_value,
+        'mcts_q_values': mcts_q_values,
+        'p1_bfs_dist':   p1_bfs_dist,
+        'p2_bfs_dist':   p2_bfs_dist,
         'N':             N,
         'n_channels':    n_channels,
         'use_bfs':       USE_BFS_CHANNELS,
     })
 
 
-# ── API: live log SSE ─────────────────────────────────────────────────────────
+
+# ── API: training control ────────────────────────────────────────────────
+
+@app.route('/api/training/status')
+def api_training_status():
+    running = _training_running()
+    stop_pending = os.path.exists(_stop_flag_path())
+    last_cycle = None
+    stats_path = os.path.join(LOGS_DIR, 'stats.csv')
+    if os.path.exists(stats_path):
+        with open(stats_path, 'r', encoding='utf-8') as f:
+            rows = list(csv.DictReader(f))
+        if rows:
+            last_cycle = int(rows[-1]['cycle'])
+    # Last non-empty line from the most recent log file
+    last_log_line = ''
+    log_files = sorted(glob.glob(os.path.join(LOGS_DIR, '*.log')))
+    if log_files:
+        try:
+            with open(log_files[-1], 'r', encoding='utf-8', errors='replace') as f:
+                for line in f:
+                    stripped = line.rstrip()
+                    if stripped:
+                        last_log_line = stripped
+        except OSError:
+            pass
+    return jsonify({
+        'running': running,
+        'stop_pending': stop_pending,
+        'pid': _train_proc.pid if running else None,
+        'last_cycle': last_cycle,
+        'last_log_line': last_log_line,
+    })
+
+
+@app.route('/api/training/start', methods=['POST'])
+def api_training_start():
+    global _train_proc
+    if _training_running():
+        return jsonify({'error': 'already running', 'pid': _train_proc.pid}), 400
+    # Clear any leftover stop flag
+    sf = _stop_flag_path()
+    if os.path.exists(sf):
+        os.remove(sf)
+    _train_proc = subprocess.Popen(
+        [sys.executable, 'train_cycle.py'],
+        cwd=os.path.dirname(os.path.abspath(__file__)),
+    )
+    return jsonify({'started': True, 'pid': _train_proc.pid})
+
+
+@app.route('/api/training/stop', methods=['POST'])
+def api_training_stop():
+    """Graceful stop: write flag file; training exits after the current cycle."""
+    if not _training_running():
+        return jsonify({'error': 'not running'}), 400
+    os.makedirs(LOGS_DIR, exist_ok=True)
+    open(_stop_flag_path(), 'w').close()
+    return jsonify({'stop_requested': True})
+
+
+@app.route('/api/training/kill', methods=['POST'])
+def api_training_kill():
+    """Immediate termination of the training subprocess and all its children."""
+    global _train_proc
+    if not _training_running():
+        return jsonify({'error': 'not running'}), 400
+    pid = _train_proc.pid
+    # On Windows, taskkill /F /T kills the entire process tree (including pool workers).
+    # Plain terminate() only kills the top-level process, leaving pool workers as
+    # orphans that then flood the logs with BrokenPipeError.
+    import platform
+    if platform.system() == 'Windows':
+        subprocess.run(
+            ['taskkill', '/F', '/T', '/PID', str(pid)],
+            capture_output=True,
+        )
+    else:
+        import signal
+        os.killpg(os.getpgid(pid), signal.SIGKILL)
+    try:
+        _train_proc.wait(timeout=5)
+    except Exception:
+        pass
+    sf = _stop_flag_path()
+    if os.path.exists(sf):
+        os.remove(sf)
+    return jsonify({'killed': True})
+
+
+# ── API: live log SSE ────────────────────────────────────────────────
 
 @app.route('/api/logs/stream')
 def api_logs_stream():

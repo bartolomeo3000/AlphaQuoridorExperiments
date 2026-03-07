@@ -21,6 +21,7 @@ from copy import deepcopy
 from config import (
     SP_GAME_COUNT, SP_TEMPERATURE, TEMP_CUTOFF, SP_NUM_WORKERS, OPENING_DEPTH,
     DRAW_SHAPE_SCALE, MODEL_DIR, DATA_DIR, SP_CKPT_EVERY, USE_BFS_CHANNELS,
+    SP_FORCED_OPENING, SP_RESIGN_THRESHOLD, SP_RESIGN_CHECK_RATE,
 )
 
 # Persistent pool — created once, reused across all training cycles so workers
@@ -49,17 +50,19 @@ def write_data(history):
 
 # Atomically save self-play checkpoint so a mid-game kill loses at most
 # SP_CKPT_EVERY games rather than the entire cycle's worth.
-def _save_ckpt(path, history, outcomes, opening_seqs, completed, total_game_len=0, total_walls=0):
+def _save_ckpt(path, history, outcomes, opening_seqs, completed, total_game_len=0, total_walls=0, resign_count=0, false_resign_count=0):
     tmp = path + '.tmp'
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(tmp, 'wb') as f:
         pickle.dump({
-            'history':        history,
-            'outcomes':       outcomes,
-            'opening_seqs':   opening_seqs,
-            'completed':      completed,
-            'total_game_len': total_game_len,
-            'total_walls':    total_walls,
+            'history':            history,
+            'outcomes':           outcomes,
+            'opening_seqs':       opening_seqs,
+            'completed':          completed,
+            'total_game_len':     total_game_len,
+            'total_walls':        total_walls,
+            'resign_count':       resign_count,
+            'false_resign_count': false_resign_count,
         }, f)
     # On Windows, Defender/Search Indexer can briefly lock the destination file
     # causing os.replace to raise PermissionError.  Retry a few times.
@@ -91,6 +94,19 @@ def play(model):
     move_num = 0
     wall_count = 0
 
+    # Random opening: advance state without recording history entries
+    for _ in range(SP_FORCED_OPENING):
+        if state.is_done():
+            break
+        action = np.random.choice(state.legal_actions())
+        state = state.next(action)
+
+    # Resign setup: 10% of games skip resignation for false-resign detection
+    resign_enabled = SP_RESIGN_THRESHOLD is not None
+    no_resign = resign_enabled and (np.random.random() < SP_RESIGN_CHECK_RATE)
+    resigned = False
+    would_have_resigned = False
+
     while True:
         # When the game ends
         if state.is_done():
@@ -100,7 +116,10 @@ def play(model):
         temperature = SP_TEMPERATURE if move_num < TEMP_CUTOFF else 0.0
 
         # Getting the probability distribution of legal moves (with Dirichlet noise)
-        scores = pv_mcts_scores(model, deepcopy(state), temperature, add_noise=True)
+        if resign_enabled:
+            scores, root_q = pv_mcts_scores(model, deepcopy(state), temperature, add_noise=True, return_root_q=True)
+        else:
+            scores = pv_mcts_scores(model, deepcopy(state), temperature, add_noise=True)
 
         # Adding the state and policy to the training data
         policies = [0] * DN_OUTPUT_SIZE
@@ -118,6 +137,16 @@ def play(model):
             e_dist = state.enemy[0] // N   # 0 = enemy at goal, N-1 = at start
         draw_values.append(DRAW_SHAPE_SCALE * (e_dist - p_dist) / (N - 1))
 
+        # Resign check: if MCTS root Q (current player's expected outcome) is below threshold,
+        # end the game as a loss for the current player.
+        # In no-resign games (SP_RESIGN_CHECK_RATE fraction), skip and flag for false-resign tracking.
+        if resign_enabled and root_q < SP_RESIGN_THRESHOLD:
+            if no_resign:
+                would_have_resigned = True  # potential false-resign detected
+            else:
+                resigned = True
+                break
+
         # Getting the action
         action = np.random.choice(state.legal_actions(), p=scores)
 
@@ -134,17 +163,25 @@ def play(model):
         move_num += 1
 
     # Adding the value to the training data
-    if state.is_draw():
+    if resigned:
+        # Resigning player (the one to move when resignation triggered) loses
+        resign_value = -1 if state.is_first_player() else 1
+        outcome = 'L' if resign_value == -1 else 'W'  # from first player's perspective
+        value = resign_value
+        for i in range(len(history)):
+            history[i][2] = value
+            value = -value
+    elif state.is_draw():
         outcome = 'D'
         for i in range(len(history)):
             history[i][2] = draw_values[i]
     else:
         value = first_player_value(state)
         outcome = 'L' if value == -1 else 'W'  # from first player's perspective
-        for i in range(len(history)):
+        for i in range(len(history)):            
             history[i][2] = value
             value = -value
-    return history, outcome, tuple(opening), move_num, wall_count
+    return history, outcome, tuple(opening), move_num, wall_count, resigned, would_have_resigned
 
 # Worker function: plays exactly one game. Defined at module level so it can
 # be pickled on Windows (spawn). Model weights are passed as bytes each call
@@ -157,8 +194,8 @@ def _worker(args):
     model.load_state_dict(torch.load(io.BytesIO(state_dict_bytes), map_location='cpu'))
     model.eval()
 
-    history, outcome, opening_seq, game_len, walls = play(model)
-    return history, outcome, opening_seq, game_len, walls
+    history, outcome, opening_seq, game_len, walls, resigned, would_have_resigned = play(model)
+    return history, outcome, opening_seq, game_len, walls, resigned, would_have_resigned
 
 # Self-Play
 def self_play(cycle_num=None):
@@ -176,29 +213,34 @@ def self_play(cycle_num=None):
         ckpt_path = os.path.join(DATA_DIR, f'.sp_ckpt_c{cycle_num:04d}.pkl')
 
     # ── Load partial checkpoint if one exists ────────────────────────────────
-    history        = []
-    outcomes       = {'W': 0, 'D': 0, 'L': 0}
-    opening_seqs   = []
-    completed      = 0
-    total_game_len = 0
-    total_walls    = 0
+    history            = []
+    outcomes           = {'W': 0, 'D': 0, 'L': 0}
+    opening_seqs       = []
+    completed          = 0
+    total_game_len     = 0
+    total_walls        = 0
+    resign_count       = 0
+    false_resign_count = 0
 
     if ckpt_path and os.path.exists(ckpt_path):
         try:
             with open(ckpt_path, 'rb') as f:
                 ckpt = pickle.load(f)
-            history        = ckpt['history']
-            outcomes       = ckpt['outcomes']
-            opening_seqs   = ckpt['opening_seqs']
-            completed      = ckpt['completed']
-            total_game_len = ckpt.get('total_game_len', 0)
-            total_walls    = ckpt.get('total_walls', 0)
+            history            = ckpt['history']
+            outcomes           = ckpt['outcomes']
+            opening_seqs       = ckpt['opening_seqs']
+            completed          = ckpt['completed']
+            total_game_len     = ckpt.get('total_game_len', 0)
+            total_walls        = ckpt.get('total_walls', 0)
+            resign_count       = ckpt.get('resign_count', 0)
+            false_resign_count = ckpt.get('false_resign_count', 0)
             print(f'[resume] self-play checkpoint found: '
                   f'{completed}/{SP_GAME_COUNT} games already done')
         except Exception as exc:
             print(f'[resume] checkpoint unreadable ({exc}), starting fresh')
             history, outcomes, opening_seqs, completed = [], {'W':0,'D':0,'L':0}, [], 0
             total_game_len, total_walls = 0, 0
+            resign_count, false_resign_count = 0, 0
 
     # ── Serialize model weights once; send to all workers via IPC ─────────────
     gpu_model = load_model(os.path.join(MODEL_DIR, 'best.pt'))
@@ -213,12 +255,14 @@ def self_play(cycle_num=None):
         args = [(state_dict_bytes,)] * remaining
         pool = _get_pool()
         since_ckpt = 0
-        for game_history, outcome, opening_seq, game_len, walls in pool.imap_unordered(_worker, args):
+        for game_history, outcome, opening_seq, game_len, walls, resigned, would_have_resigned in pool.imap_unordered(_worker, args):
             history.extend(game_history)
             outcomes[outcome] += 1
             opening_seqs.append(opening_seq)
-            total_game_len += game_len
-            total_walls    += walls
+            total_game_len     += game_len
+            total_walls        += walls
+            resign_count       += int(resigned)
+            false_resign_count += int(would_have_resigned)
             completed += 1
             since_ckpt += 1
             print(f'\rSelf-play {completed}/{SP_GAME_COUNT}  '
@@ -226,7 +270,7 @@ def self_play(cycle_num=None):
             if ckpt_path and since_ckpt >= SP_CKPT_EVERY:
                 try:
                     _save_ckpt(ckpt_path, history, outcomes, opening_seqs, completed,
-                               total_game_len, total_walls)
+                               total_game_len, total_walls, resign_count, false_resign_count)
                 except Exception as exc:
                     print(f'\n[ckpt] WARNING: save failed at game {completed} ({exc}) — continuing without checkpoint')
                 since_ckpt = 0
@@ -262,16 +306,23 @@ def self_play(cycle_num=None):
     avg_walls    = total_walls    / total if total else 0
     print(f'Game length: {avg_game_len:.1f} plies avg  |  Walls placed: {avg_walls:.1f} avg')
 
+    if SP_RESIGN_THRESHOLD is not None:
+        resign_pct = 100 * resign_count / total if total else 0
+        print(f'Resignations: {resign_count}/{total} ({resign_pct:.0f}%)  '
+              f'| False-resign candidates (no-resign games w/ Q<threshold): {false_resign_count}')
+
     return {
-        'W_pct':        100 * outcomes['W'] / total,
-        'D_pct':        100 * outcomes['D'] / total,
-        'L_pct':        100 * outcomes['L'] / total,
-        'positions':    len(history),
-        'unique':       n_unique,
-        'entropy':      round(entropy, 2),
-        'top1_count':   top3[0][1] if top3 else 0,
-        'avg_game_len': round(avg_game_len, 1),
-        'avg_walls':    round(avg_walls, 1),
+        'W_pct':              100 * outcomes['W'] / total,
+        'D_pct':              100 * outcomes['D'] / total,
+        'L_pct':              100 * outcomes['L'] / total,
+        'positions':          len(history),
+        'unique':             n_unique,
+        'entropy':            round(entropy, 2),
+        'top1_count':         top3[0][1] if top3 else 0,
+        'avg_game_len':       round(avg_game_len, 1),
+        'avg_walls':          round(avg_walls, 1),
+        'resign_pct':         round(100 * resign_count / total, 1) if SP_RESIGN_THRESHOLD is not None else None,
+        'false_resign_count': false_resign_count,
     }
 
 # Running the function
