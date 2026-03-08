@@ -1,0 +1,7 @@
+Logging to ./logs_8ch\20260308_234554.log
+Variant: 8-channel (BFS channels ON)  |  model=./model_8ch  data=./data_8ch
+Resuming from cycle 36
+
+==================== Cycle  36  [23:45:54] ====================
+[resume] self-play checkpoint found: 20/300 games already done
+Self-play 21/300  W:10  D:0  L:11Self-play 22/300  W:10  D:0  L:12Self-play 23/300  W:10  D:0  L:13Self-play 24/300  W:11  D:0  L:13Self-play 25/300  W:12  D:0  L:13Self-play 26/300  W:12  D:0  L:14Self-play 27/300  W:12  D:0  L:15Self-play 28/300  W:12  D:0  L:16Self-play 29/300  W:12  D:0  L:17Self-play 30/300  W:12  D:0  L:18Self-play 31/300  W:12  D:0  L:19Self-play 32/300  W:12  D:0  L:20Self-play 33/300  W:13  D:0  L:20Self-play 34/300  W:13  D:0  L:21Self-play 35/300  W:13  D:0  L:22Self-play 36/300  W:13  D:0  L:23Self-play 37/300  W:13  D:0  L:24Self-play 38/300  W:13  D:0  L:25Self-play 39/300  W:14  D:0  L:25Self-play 40/300  W:15  D:0  L:25Self-play 41/300  W:15  D:0  L:26Self-play 42/300  W:15  D:0  L:27Self-play 43/300  W:15  D:0  L:28Self-play 44/300  W:16  D:0  L:28Self-play 45/300  W:16  D:0  L:29Self-play 46/300  W:17  D:0  L:29Self-play 47/300  W:17  D:0  L:30Self-play 48/300  W:17  D:0  L:31Self-play 49/300  W:17  D:0  L:32Self-play 50/300  W:17  D:0  L:33Self-play 51/300  W:18  D:0  L:33

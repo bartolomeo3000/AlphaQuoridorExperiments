@@ -155,12 +155,7 @@ def _state_to_display(state: State) -> dict:
 
 def _mcts_move(model, state, rollouts: int) -> int:
     """Run MCTS with the specified rollout budget and return the greedy action."""
-    orig = _cfg.PV_EVALUATE_COUNT
-    _cfg.PV_EVALUATE_COUNT = rollouts
-    try:
-        scores = pv_mcts_scores(model, deepcopy(state), temperature=0)
-    finally:
-        _cfg.PV_EVALUATE_COUNT = orig
+    scores = pv_mcts_scores(model, deepcopy(state), temperature=0, sims=rollouts)
     return int(state.legal_actions()[np.argmax(scores)])
 
 
@@ -526,7 +521,7 @@ def api_play_move():
 
     # AI responds
     model = get_model()
-    rollouts = session.get('rollouts', 400)
+    rollouts = int(data.get('rollouts', session.get('rollouts', 400)))
     if model:
         ai_action = _mcts_move(model, state, rollouts)
         state = state.next(ai_action)

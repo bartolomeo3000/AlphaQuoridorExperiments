@@ -162,10 +162,11 @@ async function sendMove(action) {
   if (gameMode !== 'vs_human') show('spinner-wrap');
   gameActive = false;
 
+  const rollouts = parseInt(document.getElementById('rollout-select').value, 10);
   const data = await fetch('/api/play/move', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action }),
+    body: JSON.stringify({ action, rollouts }),
   }).then(r => r.json());
 
   hide('spinner-wrap');

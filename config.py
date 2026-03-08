@@ -18,7 +18,7 @@ EP_GREEDY_GAMES = 10   # Games vs greedy-forward agent
 EP_BFS_GAMES    = 10   # Games vs BFS-shortest-path agent
 
 # ── Evaluate network (latest vs best) ────────────────────────────────────────
-EN_GAME_COUNT            = 40    # Evaluation games per cycle — must be even (paired games)
+EN_GAME_COUNT            = 50    # Evaluation games per cycle — must be even (paired games)
                                  # Each opening is played twice (once per side) to cancel positional bias.
 EN_TEMPERATURE           = 0.0   # Temperature during MCTS play (0 = greedy; diversity comes from EN_FORCED_OPENING)
 EN_TEMP_CUTOFF           = 0     # Unused when EN_TEMPERATURE=0
@@ -68,7 +68,7 @@ BFS_WALL_PUCT_SCALE     = 0.01  # PUCT bonus for wall moves = scale × (Δopp - 
 # ── Training ──────────────────────────────────────────────────────────────────
 NUM_EPOCH            = 100      # Epochs per training phase
 BATCH_SIZE           = 256
-REPLAY_BUFFER_CYCLES = 5        # How many most-recent history files to train on
+REPLAY_BUFFER_CYCLES = 7        # How many most-recent history files to train on
 LR                   = 0.001    # Adam initial learning rate
 LR_MIN               = 0.00025  # Cosine-annealing floor (reached at epoch NUM_EPOCH)
 WEIGHT_DECAY         = 0.0005   # L2 regularisation (equivalent to Keras kernel_regularizer)
