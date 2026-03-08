@@ -72,13 +72,12 @@ function initCharts() {
   });
 
   charts.resign = mkChart('c-resign', 'line', [
-    { label: 'Resign %',          data: [], borderColor: '#e05c6a', backgroundColor: color('#e05c6a', 0.1), fill: true, tension: 0.3, yAxisID: 'y' },
-    { label: 'False-Resign Count', data: [], borderColor: '#e0a84a', backgroundColor: 'transparent', tension: 0.3, yAxisID: 'y2', borderDash: [4,3] },
+    { label: 'Resign %',      data: [], borderColor: '#e05c6a', backgroundColor: color('#e05c6a', 0.1), fill: true, tension: 0.3 },
+    { label: 'False-Resign %', data: [], borderColor: '#e0a84a', backgroundColor: 'transparent', tension: 0.3, borderDash: [4,3] },
   ], {
     scales: {
       x: CHART_DEFAULTS.scales.x,
-      y:  { ...CHART_DEFAULTS.scales.y, position: 'left',  title: { display: true, text: 'Resign %', color: '#aaa' } },
-      y2: { ...CHART_DEFAULTS.scales.y, position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: 'False-Resign', color: '#aaa' } },
+      y: { ...CHART_DEFAULTS.scales.y, min: 0, max: 100, title: { display: true, text: '%', color: '#aaa' } },
     },
   });
 
@@ -150,7 +149,7 @@ function updateSummary(rows) {
   document.getElementById('s-gamelen').textContent = last.sp_avg_game_len != null ? last.sp_avg_game_len.toFixed(1) : '—';
   document.getElementById('s-entropy').textContent = last.sp_entropy != null ? last.sp_entropy.toFixed(2) : '—';
   document.getElementById('s-resign').textContent = last.sp_resign_pct != null ? last.sp_resign_pct.toFixed(1) + '%' : '—';
-  document.getElementById('s-false-resign').textContent = last.sp_false_resign != null ? last.sp_false_resign : '—';
+  document.getElementById('s-false-resign').textContent = last.sp_false_resign != null ? last.sp_false_resign.toFixed(1) + '%' : '—';
 }
 
 function updateCharts(rows) {
@@ -248,7 +247,7 @@ function updateStatsTable(rows) {
     { key: 'cycle',           hdr: 'Cycle',    fmt: v => v },
     { key: 't_cumulative_h',  hdr: 'Total h',  fmt: v => v != null ? v.toFixed(1)+'h' : '—' },
     { key: 'sp_resign_pct',   hdr: 'Resign%',  fmt: v => v != null ? v.toFixed(1)+'%' : '—' },
-    { key: 'sp_false_resign', hdr: 'FalseRes', fmt: v => v != null ? v : '—' },
+    { key: 'sp_false_resign', hdr: 'FalseRes', fmt: v => v != null ? v.toFixed(1)+'%' : '—' },
     { key: 'sp_entropy',      hdr: 'Entropy',  fmt: v => v != null ? v.toFixed(2) : '—', color: v => v != null ? rdylgn((v-5)/3) : null },
     { key: 'sp_top1',         hdr: 'Top-1',    fmt: v => v != null ? v : '—' },
     { key: 'sp_avg_game_len', hdr: 'Avg Plies',fmt: v => v != null ? v.toFixed(1) : '—', color: v => v != null ? blues((v-10)/30) : null },

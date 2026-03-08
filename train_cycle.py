@@ -120,7 +120,7 @@ def _run(stats_path):
         t_bp = 0.0
         if promoted:
             t0 = time.time()
-            bp_stats = evaluate_best_player()
+            bp_stats = evaluate_best_player(cycle_num=cycle_num)
             t_bp = (time.time() - t0) / 60
             print(f'[timing] eval-best:    {t_bp:.1f} min')
 
@@ -144,7 +144,7 @@ def _run(stats_path):
             'sp_avg_game_len':    sp_stats.get('avg_game_len', ''),
             'sp_avg_walls':       sp_stats.get('avg_walls', ''),
             'sp_resign_pct':      sp_stats.get('resign_pct', ''),
-            'sp_false_resign':    sp_stats.get('false_resign_count', ''),
+            'sp_false_resign':    sp_stats.get('false_resign_pct', ''),
             'loss':         tr_stats.get('loss', ''),
             'loss_policy':  tr_stats.get('loss_policy', ''),
             'loss_value':   tr_stats.get('loss_value', ''),

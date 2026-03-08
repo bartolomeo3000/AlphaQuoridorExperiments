@@ -50,7 +50,7 @@ def write_data(history):
 
 # Atomically save self-play checkpoint so a mid-game kill loses at most
 # SP_CKPT_EVERY games rather than the entire cycle's worth.
-def _save_ckpt(path, history, outcomes, opening_seqs, completed, total_game_len=0, total_walls=0, resign_count=0, false_resign_count=0):
+def _save_ckpt(path, history, outcomes, opening_seqs, completed, total_game_len=0, total_walls=0, resign_count=0, false_resign_count=0, resign_eligible_count=0):
     tmp = path + '.tmp'
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(tmp, 'wb') as f:
@@ -61,8 +61,9 @@ def _save_ckpt(path, history, outcomes, opening_seqs, completed, total_game_len=
             'completed':          completed,
             'total_game_len':     total_game_len,
             'total_walls':        total_walls,
-            'resign_count':       resign_count,
-            'false_resign_count': false_resign_count,
+            'resign_count':          resign_count,
+            'false_resign_count':     false_resign_count,
+            'resign_eligible_count':  resign_eligible_count,
         }, f)
     # On Windows, Defender/Search Indexer can briefly lock the destination file
     # causing os.replace to raise PermissionError.  Retry a few times.
@@ -94,8 +95,9 @@ def play(model):
     move_num = 0
     wall_count = 0
 
-    # Random opening: advance state without recording history entries
-    for _ in range(SP_FORCED_OPENING):
+    # Random opening: half of games play from the true start position, half get a random opening.
+    opening_len = SP_FORCED_OPENING if np.random.random() < 0.5 else 0
+    for _ in range(opening_len):
         if state.is_done():
             break
         action = np.random.choice(state.legal_actions())
@@ -181,7 +183,7 @@ def play(model):
         for i in range(len(history)):            
             history[i][2] = value
             value = -value
-    return history, outcome, tuple(opening), move_num, wall_count, resigned, would_have_resigned
+    return history, outcome, tuple(opening), move_num, wall_count, resigned, would_have_resigned, (resign_enabled and not no_resign)
 
 # Worker function: plays exactly one game. Defined at module level so it can
 # be pickled on Windows (spawn). Model weights are passed as bytes each call
@@ -194,8 +196,8 @@ def _worker(args):
     model.load_state_dict(torch.load(io.BytesIO(state_dict_bytes), map_location='cpu'))
     model.eval()
 
-    history, outcome, opening_seq, game_len, walls, resigned, would_have_resigned = play(model)
-    return history, outcome, opening_seq, game_len, walls, resigned, would_have_resigned
+    history, outcome, opening_seq, game_len, walls, resigned, would_have_resigned, resign_eligible = play(model)
+    return history, outcome, opening_seq, game_len, walls, resigned, would_have_resigned, resign_eligible
 
 # Self-Play
 def self_play(cycle_num=None):
@@ -219,8 +221,9 @@ def self_play(cycle_num=None):
     completed          = 0
     total_game_len     = 0
     total_walls        = 0
-    resign_count       = 0
-    false_resign_count = 0
+    resign_count           = 0
+    false_resign_count     = 0
+    resign_eligible_count  = 0
 
     if ckpt_path and os.path.exists(ckpt_path):
         try:
@@ -232,15 +235,16 @@ def self_play(cycle_num=None):
             completed          = ckpt['completed']
             total_game_len     = ckpt.get('total_game_len', 0)
             total_walls        = ckpt.get('total_walls', 0)
-            resign_count       = ckpt.get('resign_count', 0)
-            false_resign_count = ckpt.get('false_resign_count', 0)
+            resign_count          = ckpt.get('resign_count', 0)
+            false_resign_count    = ckpt.get('false_resign_count', 0)
+            resign_eligible_count = ckpt.get('resign_eligible_count', 0)
             print(f'[resume] self-play checkpoint found: '
                   f'{completed}/{SP_GAME_COUNT} games already done')
         except Exception as exc:
             print(f'[resume] checkpoint unreadable ({exc}), starting fresh')
             history, outcomes, opening_seqs, completed = [], {'W':0,'D':0,'L':0}, [], 0
             total_game_len, total_walls = 0, 0
-            resign_count, false_resign_count = 0, 0
+            resign_count, false_resign_count, resign_eligible_count = 0, 0, 0
 
     # ── Serialize model weights once; send to all workers via IPC ─────────────
     gpu_model = load_model(os.path.join(MODEL_DIR, 'best.pt'))
@@ -255,14 +259,15 @@ def self_play(cycle_num=None):
         args = [(state_dict_bytes,)] * remaining
         pool = _get_pool()
         since_ckpt = 0
-        for game_history, outcome, opening_seq, game_len, walls, resigned, would_have_resigned in pool.imap_unordered(_worker, args):
+        for game_history, outcome, opening_seq, game_len, walls, resigned, would_have_resigned, resign_eligible in pool.imap_unordered(_worker, args):
             history.extend(game_history)
             outcomes[outcome] += 1
             opening_seqs.append(opening_seq)
             total_game_len     += game_len
             total_walls        += walls
-            resign_count       += int(resigned)
-            false_resign_count += int(would_have_resigned)
+            resign_count          += int(resigned)
+            false_resign_count    += int(would_have_resigned)
+            resign_eligible_count += int(resign_eligible)
             completed += 1
             since_ckpt += 1
             print(f'\rSelf-play {completed}/{SP_GAME_COUNT}  '
@@ -270,7 +275,7 @@ def self_play(cycle_num=None):
             if ckpt_path and since_ckpt >= SP_CKPT_EVERY:
                 try:
                     _save_ckpt(ckpt_path, history, outcomes, opening_seqs, completed,
-                               total_game_len, total_walls, resign_count, false_resign_count)
+                               total_game_len, total_walls, resign_count, false_resign_count, resign_eligible_count)
                 except Exception as exc:
                     print(f'\n[ckpt] WARNING: save failed at game {completed} ({exc}) — continuing without checkpoint')
                 since_ckpt = 0
@@ -307,9 +312,11 @@ def self_play(cycle_num=None):
     print(f'Game length: {avg_game_len:.1f} plies avg  |  Walls placed: {avg_walls:.1f} avg')
 
     if SP_RESIGN_THRESHOLD is not None:
-        resign_pct = 100 * resign_count / total if total else 0
-        print(f'Resignations: {resign_count}/{total} ({resign_pct:.0f}%)  '
-              f'| False-resign candidates (no-resign games w/ Q<threshold): {false_resign_count}')
+        resign_pct = 100 * resign_count / resign_eligible_count if resign_eligible_count else 0
+        threshold_games = resign_count + false_resign_count
+        false_resign_pct = round(100 * false_resign_count / threshold_games, 1) if threshold_games else 0
+        print(f'Resignations: {resign_count}/{resign_eligible_count} eligible ({resign_pct:.0f}%)  '
+              f'| False-resign: {false_resign_count}/{threshold_games} ({false_resign_pct:.1f}% of threshold games)')
 
     return {
         'W_pct':              100 * outcomes['W'] / total,
@@ -321,8 +328,10 @@ def self_play(cycle_num=None):
         'top1_count':         top3[0][1] if top3 else 0,
         'avg_game_len':       round(avg_game_len, 1),
         'avg_walls':          round(avg_walls, 1),
-        'resign_pct':         round(100 * resign_count / total, 1) if SP_RESIGN_THRESHOLD is not None else None,
-        'false_resign_count': false_resign_count,
+        'resign_pct':        round(100 * resign_count / resign_eligible_count, 1) if (SP_RESIGN_THRESHOLD is not None and resign_eligible_count) else None,
+        'false_resign_pct':  (round(100 * false_resign_count / (resign_count + false_resign_count), 1)
+                              if SP_RESIGN_THRESHOLD is not None and (resign_count + false_resign_count) > 0 else
+                              (0 if SP_RESIGN_THRESHOLD is not None else None)),
     }
 
 # Running the function

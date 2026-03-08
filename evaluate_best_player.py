@@ -6,8 +6,9 @@
 from game import State, random_action
 from pv_mcts import pv_mcts_action
 import os
+import json
 from dual_network import load_model
-from config import EP_RANDOM_GAMES, EP_GREEDY_GAMES, EP_BFS_GAMES, MODEL_DIR, EN_FORCED_OPENING
+from config import EP_RANDOM_GAMES, EP_GREEDY_GAMES, EP_BFS_GAMES, MODEL_DIR, EN_FORCED_OPENING, LOGS_DIR
 from collections import deque
 import numpy as np
 import random
@@ -73,10 +74,11 @@ def bfs_forward_action(state):
 
     return step
 
-# Execute one game
+# Execute one game — returns (first_player_point, list_of_all_actions)
 def play(next_actions, opening_actions=()):
     # Generate state
     state = State()
+    actions = list(opening_actions)
 
     # Replay forced opening before handing off to the agents
     for action in opening_actions:
@@ -92,20 +94,22 @@ def play(next_actions, opening_actions=()):
 
         # Get action
         next_action = next_actions[0] if state.is_first_player() else next_actions[1]
-        action = next_action(state)
+        action = int(next_action(state))
+        actions.append(action)
 
         # Get the next state
         state = state.next(action)
 
-    # Return points for the first player
-    return first_player_point(state)
+    # Return points for the first player and the full action list
+    return first_player_point(state), actions
 
-# Evaluation of any algorithm
+# Evaluation of any algorithm — returns (average_point, game_records)
 def evaluate_algorithm_of(label, next_actions, game_count):
     if game_count == 0:
-        return None
+        return None, []
     total_point = 0
     wins = draws = losses = 0
+    game_records = []
     n_pairs = game_count // 2
     for pair_idx in range(n_pairs):
         # Pre-generate one opening for both games in this pair
@@ -121,41 +125,66 @@ def evaluate_algorithm_of(label, next_actions, game_count):
         for side in range(2):
             i = pair_idx * 2 + side
             if side == 0:
-                p = play(next_actions, opening_actions)
+                p, actions = play(next_actions, opening_actions)
+                nn_first = True
             else:
-                p = 1 - play(list(reversed(next_actions)), opening_actions)
+                p_raw, actions = play(list(reversed(next_actions)), opening_actions)
+                p = 1 - p_raw
+                nn_first = False
             total_point += p
-            if p == 1.0:   wins   += 1
-            elif p == 0.0: losses += 1
-            else:          draws  += 1
+            if p == 1.0:   wins   += 1; result = 'nn_win'
+            elif p == 0.0: losses += 1; result = 'opponent_win'
+            else:          draws  += 1; result = 'draw'
+            game_records.append({'actions': actions, 'nn_first': nn_first, 'result': result})
             print(f'\r{label} {i+1}/{game_count}  W:{wins} D:{draws} L:{losses}', end='')
     print('')
     average_point = total_point / game_count
     print(f'{label} — W:{wins}  D:{draws}  L:{losses}  Score:{average_point:.2f}')
-    return round(average_point, 2)
+    return round(average_point, 2), game_records
+
+def _save_bench_games(cycle_num, opponent, score, records):
+    if not records:
+        return
+    bench_dir = os.path.join(LOGS_DIR, 'bench_games')
+    os.makedirs(bench_dir, exist_ok=True)
+    if cycle_num is not None:
+        fname = f'cycle_{cycle_num:04d}_vs_{opponent}.json'
+    else:
+        from datetime import datetime
+        fname = datetime.now().strftime('%Y%m%d_%H%M%S') + f'_vs_{opponent}.json'
+    path = os.path.join(bench_dir, fname)
+    with open(path, 'w', encoding='utf-8') as f:
+        json.dump({'cycle': cycle_num, 'opponent': opponent, 'score': score, 'games': records}, f)
+    print(f'Saved {len(records)} bench game records (vs {opponent}) to {path}')
+
 
 # Evaluation of the best player
-def evaluate_best_player():
+def evaluate_best_player(cycle_num=None):
     # Load the model of the best player
     model = load_model(os.path.join(MODEL_DIR, 'best.pt'))
 
     # Generate a function to select actions using PV MCTS
     next_pv_mcts_action = pv_mcts_action(model, 0.0)
 
-    # VS Random (10 games)
+    # VS Random
     next_actions = (next_pv_mcts_action, random_action)
-    vs_random = evaluate_algorithm_of('VS_Random', next_actions, EP_RANDOM_GAMES)
+    vs_random, records_random = evaluate_algorithm_of('VS_Random', next_actions, EP_RANDOM_GAMES)
 
-    # VS Greedy Forward — naive: always steps to lowest reachable row (20 games)
+    # VS Greedy Forward
     next_actions = (next_pv_mcts_action, greedy_forward_action)
-    vs_greedy = evaluate_algorithm_of('VS_GreedyForward', next_actions, EP_GREEDY_GAMES)
+    vs_greedy, records_greedy = evaluate_algorithm_of('VS_GreedyForward', next_actions, EP_GREEDY_GAMES)
 
-    # VS BFS Forward — optimal pawn runner: follows true shortest path through walls (20 games)
+    # VS BFS Forward
     next_actions = (next_pv_mcts_action, bfs_forward_action)
-    vs_bfs = evaluate_algorithm_of('VS_BFS', next_actions, EP_BFS_GAMES)
+    vs_bfs, records_bfs = evaluate_algorithm_of('VS_BFS', next_actions, EP_BFS_GAMES)
 
     # Clear model
     del model
+
+    # Save game records
+    _save_bench_games(cycle_num, 'random', vs_random, records_random)
+    _save_bench_games(cycle_num, 'greedy', vs_greedy, records_greedy)
+    _save_bench_games(cycle_num, 'bfs',    vs_bfs,    records_bfs)
 
     return {'vs_random': vs_random, 'vs_greedy': vs_greedy, 'vs_bfs': vs_bfs}
 

@@ -1,0 +1,6 @@
+Logging to ./logs_8ch\20260308_040143.log
+Variant: 8-channel (BFS channels ON)  |  model=./model_8ch  data=./data_8ch
+Resuming from cycle 34
+
+==================== Cycle  34  [04:01:43] ====================
+[resume] self-play checkpoint found: 80/300 games already done

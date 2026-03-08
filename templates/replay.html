@@ -11,6 +11,7 @@
     <div class="source-toggle" style="margin-bottom:10px">
       <button class="btn source-btn active" id="src-eval"    onclick="setSource('eval')">Eval cycles</button>
       <button class="btn source-btn"        id="src-matchup" onclick="setSource('matchup')">Matchups</button>
+      <button class="btn source-btn"        id="src-bench"   onclick="setSource('bench')">Bench tests</button>
     </div>
 
     <div id="panel-eval">
@@ -24,6 +25,13 @@
         <option value="">— pick run —</option>
       </select>
       <div id="matchup-meta" class="text-dim" style="font-size:0.78rem;margin-bottom:8px"></div>
+    </div>
+
+    <div id="panel-bench" style="display:none">
+      <select id="bench-select" style="width:100%;margin-bottom:12px">
+        <option value="">— pick test —</option>
+      </select>
+      <div id="bench-meta" class="text-dim" style="font-size:0.78rem;margin-bottom:8px"></div>
     </div>
 
     <h3>Games</h3>

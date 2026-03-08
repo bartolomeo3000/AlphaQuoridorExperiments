@@ -39,15 +39,25 @@ async function loadModels() {
 
 async function startMatchup() {
   const cfg = {
-    model_a: document.getElementById('ma-model').value,
-    model_b: document.getElementById('mb-model').value,
-    pos_a:   parseFloat(document.getElementById('ma-pos').value),
-    bfs_a:   parseFloat(document.getElementById('ma-bfs').value),
-    sims_a:  parseInt(document.getElementById('ma-sims').value, 10),
-    pos_b:   parseFloat(document.getElementById('mb-pos').value),
-    bfs_b:   parseFloat(document.getElementById('mb-bfs').value),
-    sims_b:  parseInt(document.getElementById('mb-sims').value, 10),
-    games:   parseInt(document.getElementById('m-games').value, 10),
+    model_a:   document.getElementById('ma-model').value,
+    model_b:   document.getElementById('mb-model').value,
+    pos_a:     parseFloat(document.getElementById('ma-pos').value),
+    bfs_a:     parseFloat(document.getElementById('ma-bfs').value),
+    penalty_a: parseFloat(document.getElementById('ma-penalty').value),
+    floor_a:      parseFloat(document.getElementById('ma-floor').value),
+    advance_a:    parseFloat(document.getElementById('ma-advance').value),
+    retreat_a:    parseFloat(document.getElementById('ma-retreat').value),
+    wall_a:       parseFloat(document.getElementById('ma-wallscale').value),
+    sims_a:    parseInt(document.getElementById('ma-sims').value, 10),
+    pos_b:     parseFloat(document.getElementById('mb-pos').value),
+    bfs_b:     parseFloat(document.getElementById('mb-bfs').value),
+    penalty_b: parseFloat(document.getElementById('mb-penalty').value),
+    floor_b:      parseFloat(document.getElementById('mb-floor').value),
+    advance_b:    parseFloat(document.getElementById('mb-advance').value),
+    retreat_b:    parseFloat(document.getElementById('mb-retreat').value),
+    wall_b:       parseFloat(document.getElementById('mb-wallscale').value),
+    sims_b:    parseInt(document.getElementById('mb-sims').value, 10),
+    games:     parseInt(document.getElementById('m-games').value, 10),
   };
   lastCfg = cfg;
 

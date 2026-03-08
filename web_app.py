@@ -250,12 +250,22 @@ def api_matchup_start():
     cfg = {
         'model_a': path_a, 'model_b': path_b,
         'games':   games,
-        'pos_a':   float(body.get('pos_a',  _cfg.POSITION_PRIOR_BOOST)),
-        'bfs_a':   float(body.get('bfs_a',  _cfg.BFS_MOVE_BOOST)),
-        'sims_a':  int(body.get('sims_a', _cfg.PV_EVALUATE_COUNT)),
-        'pos_b':   float(body.get('pos_b',  _cfg.POSITION_PRIOR_BOOST)),
-        'bfs_b':   float(body.get('bfs_b',  _cfg.BFS_MOVE_BOOST)),
-        'sims_b':  int(body.get('sims_b', _cfg.PV_EVALUATE_COUNT)),
+        'pos_a':     float(body.get('pos_a',     _cfg.POSITION_PRIOR_BOOST)),
+        'bfs_a':     float(body.get('bfs_a',     _cfg.BFS_MOVE_BOOST)),
+        'penalty_a': float(body.get('penalty_a', _cfg.BFS_MOVE_PENALTY)),
+        'floor_a':   float(body.get('floor_a',   _cfg.BFS_ADVANCE_FLOOR)),
+        'retreat_a': float(body.get('retreat_a', _cfg.BFS_PUCT_RETREAT_PENALTY)),
+        'wall_a':    float(body.get('wall_a',    _cfg.BFS_WALL_PUCT_SCALE)),
+        'advance_a': float(body.get('advance_a', _cfg.BFS_PUCT_ADVANCE_BONUS)),
+        'sims_a':    int(body.get('sims_a', _cfg.PV_EVALUATE_COUNT)),
+        'pos_b':     float(body.get('pos_b',     _cfg.POSITION_PRIOR_BOOST)),
+        'bfs_b':     float(body.get('bfs_b',     _cfg.BFS_MOVE_BOOST)),
+        'penalty_b': float(body.get('penalty_b', _cfg.BFS_MOVE_PENALTY)),
+        'floor_b':   float(body.get('floor_b',   _cfg.BFS_ADVANCE_FLOOR)),
+        'retreat_b': float(body.get('retreat_b', _cfg.BFS_PUCT_RETREAT_PENALTY)),
+        'wall_b':    float(body.get('wall_b',    _cfg.BFS_WALL_PUCT_SCALE)),
+        'advance_b': float(body.get('advance_b', _cfg.BFS_PUCT_ADVANCE_BONUS)),
+        'sims_b':    int(body.get('sims_b', _cfg.PV_EVALUATE_COUNT)),
     }
 
     _matchup_cancel = threading.Event()
@@ -414,7 +424,40 @@ def api_eval_game(cycle: int):
         return jsonify(json.load(f))
 
 
-# ── API: human play ───────────────────────────────────────────────────────────
+# ── API: bench games (vs greedy/bfs/random) ───────────────────────────────────────
+
+@app.route('/api/bench_games')
+def api_bench_games():
+    bench_dir = os.path.join(LOGS_DIR, 'bench_games')
+    if not os.path.exists(bench_dir):
+        return jsonify([])
+    files = sorted(glob.glob(os.path.join(bench_dir, '*.json')))
+    result = []
+    for fp in files:
+        name = os.path.basename(fp)
+        try:
+            with open(fp, 'r', encoding='utf-8') as f:
+                meta = json.load(f)
+            result.append({
+                'name':     name,
+                'cycle':    meta.get('cycle'),
+                'opponent': meta.get('opponent'),
+                'score':    meta.get('score'),
+                'games':    len(meta.get('games', [])),
+            })
+        except Exception:
+            continue
+    return jsonify(result)
+
+
+@app.route('/api/bench_games/<name>')
+def api_bench_game(name):
+    bench_dir = os.path.join(LOGS_DIR, 'bench_games')
+    path = os.path.join(bench_dir, name)
+    if not os.path.exists(path):
+        return jsonify({'error': 'not found'}), 404
+    with open(path, 'r', encoding='utf-8') as f:
+        return jsonify(json.load(f))
 
 @app.route('/api/play/new', methods=['POST'])
 def api_play_new():

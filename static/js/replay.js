@@ -11,16 +11,18 @@ let stepIdx    = 0;
 let playing    = false;
 let playTimer  = null;
 let gameRecord = null; // raw JSON record for current game
-let curSource  = 'eval'; // 'eval' | 'matchup'
+let curSource  = 'eval'; // 'eval' | 'matchup' | 'bench'
 
-// ── Source toggle ────────────────────────────────────────────────────────
+// ── Source toggle ─────────────────────────────────────────────────────────────────
 
 function setSource(src) {
   curSource = src;
   document.getElementById('panel-eval').style.display    = src === 'eval'    ? '' : 'none';
   document.getElementById('panel-matchup').style.display = src === 'matchup' ? '' : 'none';
+  document.getElementById('panel-bench').style.display   = src === 'bench'   ? '' : 'none';
   document.getElementById('src-eval').classList.toggle('active', src === 'eval');
   document.getElementById('src-matchup').classList.toggle('active', src === 'matchup');
+  document.getElementById('src-bench').classList.toggle('active', src === 'bench');
   document.getElementById('game-list').innerHTML = '';
   gameRecord = null;
 }
@@ -98,8 +100,8 @@ async function loadMatchupGames(runMeta) {
 }
 
 function badgeHTML(result) {
-  if (result === 'latest_win' || result === 'a_win') return '<span class="badge badge-win">A / Latest ✓</span>';
-  if (result === 'best_win'   || result === 'b_win') return '<span class="badge badge-loss">B / Best ✓</span>';
+  if (result === 'latest_win' || result === 'a_win' || result === 'nn_win')       return '<span class="badge badge-win">NN / Latest ✓</span>';
+  if (result === 'best_win'   || result === 'b_win' || result === 'opponent_win') return '<span class="badge badge-loss">Opp / Best ✓</span>';
   return '<span class="badge badge-draw">Draw</span>';
 }
 
@@ -443,6 +445,51 @@ async function fetchAndRenderAnalysis(state, mcts_rollouts = 0) {
   });
 }
 
-// ── Init ───────────────────────────────────────────────────────────────
+// ── Bench source ─────────────────────────────────────────────────────────────────
+
+async function loadBenchRuns() {
+  const list = await fetch('/api/bench_games').then(r => r.json());
+  const sel  = document.getElementById('bench-select');
+  sel.innerHTML = '<option value="">— pick test —</option>';
+  list.forEach(run => {
+    const opt = document.createElement('option');
+    opt.value = run.name;
+    const label = run.cycle != null ? `Cycle ${run.cycle}` : run.name;
+    const opp   = run.opponent ? ` vs ${run.opponent}` : '';
+    const score = run.score != null ? ` (${(run.score * 100).toFixed(0)}%)` : '';
+    opt.textContent = label + opp + score;
+    sel.appendChild(opt);
+  });
+  sel.addEventListener('change', () => {
+    const run = list.find(r => r.name === sel.value);
+    if (run) loadBenchGames(run);
+  });
+  if (list.length) {
+    sel.value = list[list.length - 1].name;
+    await loadBenchGames(list[list.length - 1]);
+  }
+}
+
+async function loadBenchGames(runMeta) {
+  const data = await fetch(`/api/bench_games/${runMeta.name}`).then(r => r.json());
+  const metaEl = document.getElementById('bench-meta');
+  const scoreStr = data.score != null ? (data.score * 100).toFixed(1) + '%' : '?';
+  metaEl.textContent = `vs ${data.opponent}  score: ${scoreStr}  (${(data.games || []).length} games)`;
+
+  const ul = document.getElementById('game-list');
+  ul.innerHTML = '';
+  (data.games || []).forEach((g, i) => {
+    const li = document.createElement('li');
+    li.innerHTML = `<span>#${i + 1}</span>${badgeHTML(g.result)}`
+      + `<span class="text-dim" style="font-size:0.75rem">${g.actions.length} moves</span>`;
+    li.dataset.idx = i;
+    li.addEventListener('click', () => selectGame(data.games, i));
+    ul.appendChild(li);
+  });
+  if (data.games && data.games.length) selectGame(data.games, 0);
+}
+
+// ── Init ─────────────────────────────────────────────────────────────────
 loadCycles();
 loadMatchupRuns();
+loadBenchRuns();

@@ -14,13 +14,28 @@
         <select id="ma-model"></select>
       </label>
       <label>Pos boost
-        <input type="number" id="ma-pos"  step="0.1" min="0" value="3.0">
+        <input type="number" id="ma-pos"      step="0.1"   min="0" value="3.0">
       </label>
-      <label>BFS boost
-        <input type="number" id="ma-bfs"  step="0.1" min="0" value="3.0">
+      <label>BFS advance boost
+        <input type="number" id="ma-bfs"      step="0.1"   min="0" value="3.0">
+      </label>
+      <label>BFS retreat penalty
+        <input type="number" id="ma-penalty"  step="0.05"  min="0" value="0.3">
+      </label>
+      <label>BFS advance floor
+        <input type="number" id="ma-floor"    step="0.01"  min="0" value="0.1">
+      </label>
+      <label>PUCT advance bonus
+        <input type="number" id="ma-advance"  step="0.01"  min="0" value="0.04">
+      </label>
+      <label>PUCT retreat penalty
+        <input type="number" id="ma-retreat"  step="0.01"  min="0" value="0.15">
+      </label>
+      <label>Wall BFS scale
+        <input type="number" id="ma-wallscale" step="0.001" min="0" value="0.005">
       </label>
       <label>Simulations
-        <input type="number" id="ma-sims" step="50"  min="1" value="400">
+        <input type="number" id="ma-sims"    step="50"   min="1"    value="400">
       </label>
     </div>
 
@@ -34,13 +49,28 @@
         <select id="mb-model"></select>
       </label>
       <label>Pos boost
-        <input type="number" id="mb-pos"  step="0.1" min="0" value="3.0">
+        <input type="number" id="mb-pos"      step="0.1"   min="0" value="3.0">
       </label>
-      <label>BFS boost
-        <input type="number" id="mb-bfs"  step="0.1" min="0" value="3.0">
+      <label>BFS advance boost
+        <input type="number" id="mb-bfs"      step="0.1"   min="0" value="3.0">
+      </label>
+      <label>BFS retreat penalty
+        <input type="number" id="mb-penalty"  step="0.05"  min="0" value="0.3">
+      </label>
+      <label>BFS advance floor
+        <input type="number" id="mb-floor"    step="0.01"  min="0" value="0.1">
+      </label>
+      <label>PUCT advance bonus
+        <input type="number" id="mb-advance"  step="0.01"  min="0" value="0.04">
+      </label>
+      <label>PUCT retreat penalty
+        <input type="number" id="mb-retreat"  step="0.01"  min="0" value="0.15">
+      </label>
+      <label>Wall BFS scale
+        <input type="number" id="mb-wallscale" step="0.001" min="0" value="0.005">
       </label>
       <label>Simulations
-        <input type="number" id="mb-sims" step="50"  min="1" value="400">
+        <input type="number" id="mb-sims"    step="50"   min="1"    value="400">
       </label>
     </div>
   </div>

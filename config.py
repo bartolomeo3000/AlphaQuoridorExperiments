@@ -36,7 +36,7 @@ DIRICHLET_ALPHA    = 0.15   # Noise concentration — smaller = spread out more 
 DIRICHLET_EPSILON  = 0.30   # Fraction of prior replaced by noise (AlphaZero default; bump to 0.40 if opening entropy collapses)
 POSITION_PRIOR_BOOST = 3.0  # Scale position-move priors before renormalising
                              # Counteracts wall actions dominating the action space (~30-50 walls vs ~4 position moves)
-BFS_MOVE_BOOST       = 2.0   # Extra multiplier (on top of POSITION_PRIOR_BOOST) for the pawn move(s)
+BFS_MOVE_BOOST       = 3.0   # Extra multiplier (on top of POSITION_PRIOR_BOOST) for the pawn move(s)
                              # that reduce BFS distance to the goal row. Set to 1.0 to disable.
                              # Reduced from 3.0 — BFS_PUCT_BONUS now handles in-search guidance.
 BFS_MOVE_PENALTY     = 0.3   # Multiplier applied to pawn moves that INCREASE BFS distance to goal.
@@ -51,19 +51,19 @@ SP_TEMPERATURE      = 1.0    # Boltzmann temperature for move sampling
 TEMP_CUTOFF         = 10     # Play with SP_TEMPERATURE for the first N plies, then greedy
 SP_NUM_WORKERS      = max(1, mp.cpu_count() - 1)  # CPU workers; leaves one core free for OS / GPU
 SP_FORCED_OPENING    = 4      # Random moves played at game start before MCTS (not recorded in history)
-SP_RESIGN_THRESHOLD  = -0.90  # Resign if MCTS root Q drops below this (None = disabled)
-                              # Q ≈ -0.90 → ~5% win probability (AlphaZero default)
-SP_RESIGN_CHECK_RATE = 0.10   # Fraction of games that skip resignation for false-resign detection.
+SP_RESIGN_THRESHOLD  = -0.95  # Resign if MCTS root Q drops below this (None = disabled)
+                              # Q ≈ -0.95 → ~2.5% win probability; stricter than AlphaZero default (-0.90)
+SP_RESIGN_CHECK_RATE = 0.60   # Fraction of games that skip resignation for false-resign detection.
                               # After training, false-resign candidates (Q<threshold AND game recovered)
-                              # should be <5% of no-resign games; if higher, raise threshold toward -0.85.
 OPENING_DEPTH        = 4      # Plies tracked for opening-diversity entropy metric
 SP_CKPT_EVERY  = 10     # Checkpoint self-play progress every N games (for mid-cycle resume)
 POLICY_TARGET_BLEND = 0.0   # Unused / disabled.
-BFS_PUCT_BONUS      = 0.15  # Added to PUCT score for pawn moves that decrease BFS distance;
-                             # subtracted for pawn moves that increase it. Wall moves unaffected.
-                             # Applied at every tree node during MCTS, so MCTS selection itself
-                             # favours advancing pawn moves independently of the prior.
-                             # Set to 0.0 to disable.
+BFS_PUCT_ADVANCE_BONUS  = 0.1   # PUCT bonus for pawn moves that advance toward goal.
+                                # Set to 0 (default) to let the NN learn this bias itself.
+BFS_PUCT_RETREAT_PENALTY= 0.2  # PUCT penalty subtracted for pawn moves that retreat.
+                                # Discourages the tree from exploring backward steps.
+BFS_WALL_PUCT_SCALE     = 0.01  # PUCT bonus for wall moves = scale × (Δopp - Δself).
+                                # Linear: each net BFS step blocked adds a flat bonus.
 
 # ── Training ──────────────────────────────────────────────────────────────────
 NUM_EPOCH            = 100      # Epochs per training phase

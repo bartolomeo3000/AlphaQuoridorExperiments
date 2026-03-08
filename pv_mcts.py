@@ -15,11 +15,20 @@ import random
 from config import (
     PV_EVALUATE_COUNT, C_PUCT, DIRICHLET_ALPHA, DIRICHLET_EPSILON, POSITION_PRIOR_BOOST,
     BFS_MOVE_BOOST, BFS_MOVE_PENALTY, BFS_ADVANCE_FLOOR, BFS_RETREAT_CEILING,
-    FPU_REDUCTION, BFS_PUCT_BONUS,
+    FPU_REDUCTION, BFS_PUCT_RETREAT_PENALTY, BFS_PUCT_ADVANCE_BONUS, BFS_WALL_PUCT_SCALE,
 )
 
 # Inference
-def predict(model, state):
+def predict(model, state,
+            pos_boost=None, bfs_boost=None, bfs_penalty=None,
+            bfs_floor=None, bfs_retreat_ceiling=None):
+    # Resolve overrides; None → fall back to global config
+    _pos_boost  = POSITION_PRIOR_BOOST if pos_boost          is None else pos_boost
+    _bfs_boost  = BFS_MOVE_BOOST       if bfs_boost          is None else bfs_boost
+    _bfs_pen    = BFS_MOVE_PENALTY     if bfs_penalty        is None else bfs_penalty
+    _bfs_floor  = BFS_ADVANCE_FLOOR    if bfs_floor          is None else bfs_floor
+    _bfs_ceil   = BFS_RETREAT_CEILING  if bfs_retreat_ceiling is None else bfs_retreat_ceiling
+
     # Reshape input data for inference — PyTorch uses NCHW (N, C, H, W)
     a, b, c = DN_INPUT_SHAPE  # a=H=3, b=W=3, c=C=6
     x = np.array(state.pieces_array(), dtype=np.float32).reshape(c, a, b)  # (C, H, W)
@@ -38,14 +47,14 @@ def predict(model, state):
     # Boost prior probability of position moves to compensate for wall actions
     # dominating the action space numerically
     N = state.N
-    if POSITION_PRIOR_BOOST != 1.0:
+    if _pos_boost != 1.0:
         for i, action in enumerate(legal):
             if action < N * N:
-                policies[i] *= POSITION_PRIOR_BOOST
+                policies[i] *= _pos_boost
 
     # Extra boost for the pawn move(s) that advance along the BFS-shortest path to goal
     # and penalty for pawn moves that retreat (increase BFS distance).
-    if BFS_MOVE_BOOST != 1.0 or BFS_MOVE_PENALTY != 1.0:
+    if _bfs_boost != 1.0 or _bfs_pen != 1.0:
         walls_t = tuple(state.walls)
         h_e, v_e = _get_blocked_edges(N, walls_t)
         dist = _bfs_goal_distances(N, h_e, v_e, 0)     # dist to row 0 = current player's goal
@@ -53,31 +62,31 @@ def predict(model, state):
         for i, action in enumerate(legal):
             if action < N * N:
                 if dist[action] < current_dist:
-                    policies[i] *= BFS_MOVE_BOOST
+                    policies[i] *= _bfs_boost
                 elif dist[action] > current_dist:
-                    policies[i] *= BFS_MOVE_PENALTY
+                    policies[i] *= _bfs_pen
 
     policies /= np.sum(policies) if np.sum(policies) else 1  # normalise to sum to 1
 
     # Floor: guarantee each advancing pawn move a minimum probability share,
     # then renormalise again. Fixes cases where the NN assigns near-zero prior
     # to an advancing move — multiplication alone cannot rescue a true zero.
-    if BFS_ADVANCE_FLOOR > 0.0:
+    if _bfs_floor > 0.0:
         walls_t = tuple(state.walls)  # may already be computed above; compute again if not
-        if not (BFS_MOVE_BOOST != 1.0 or BFS_MOVE_PENALTY != 1.0):
+        if not (_bfs_boost != 1.0 or _bfs_pen != 1.0):
             h_e, v_e = _get_blocked_edges(N, walls_t)
             dist = _bfs_goal_distances(N, h_e, v_e, 0)
             current_dist = dist[state.player[0]]
         for i, action in enumerate(legal):
             if action < N * N and dist[action] < current_dist:
-                if policies[i] < BFS_ADVANCE_FLOOR:
-                    policies[i] = BFS_ADVANCE_FLOOR
+                if policies[i] < _bfs_floor:
+                    policies[i] = _bfs_floor
         policies /= np.sum(policies)
 
     # Ceiling: cap each retreating pawn move to prevent the value head from
     # rescuing a move the policy correctly penalised.
-    if BFS_RETREAT_CEILING < 1.0:
-        if not (BFS_MOVE_BOOST != 1.0 or BFS_MOVE_PENALTY != 1.0 or BFS_ADVANCE_FLOOR > 0.0):
+    if _bfs_ceil < 1.0:
+        if not (_bfs_boost != 1.0 or _bfs_pen != 1.0 or _bfs_floor > 0.0):
             walls_t = tuple(state.walls)
             h_e, v_e = _get_blocked_edges(N, walls_t)
             dist = _bfs_goal_distances(N, h_e, v_e, 0)
@@ -85,8 +94,8 @@ def predict(model, state):
         capped = False
         for i, action in enumerate(legal):
             if action < N * N and dist[action] > current_dist:
-                if policies[i] > BFS_RETREAT_CEILING:
-                    policies[i] = BFS_RETREAT_CEILING
+                if policies[i] > _bfs_ceil:
+                    policies[i] = _bfs_ceil
                     capped = True
         if capped:
             policies /= np.sum(policies)
@@ -103,17 +112,25 @@ def nodes_to_scores(nodes):
     return scores
 
 # Get Monte Carlo Tree Search scores
-def pv_mcts_scores(model, state, temperature, add_noise=False, use_q_selection=False, return_root_q=False):
+def pv_mcts_scores(model, state, temperature, add_noise=False, use_q_selection=False, return_root_q=False,
+                   sims=None, pos_boost=None, bfs_boost=None, bfs_penalty=None,
+                   bfs_floor=None, bfs_retreat_ceiling=None,
+                   bfs_retreat_penalty=None, bfs_advance_bonus=None, bfs_wall_scale=None):
+    # Resolve per-call overrides; None → global config
+    _sims    = PV_EVALUATE_COUNT        if sims                is None else sims
+    _retreat = BFS_PUCT_RETREAT_PENALTY if bfs_retreat_penalty is None else bfs_retreat_penalty
+    _advance = BFS_PUCT_ADVANCE_BONUS   if bfs_advance_bonus   is None else bfs_advance_bonus
+    _wall    = BFS_WALL_PUCT_SCALE      if bfs_wall_scale      is None else bfs_wall_scale
     # Define Monte Carlo Tree Search node
     class Node:
         # Initialize node
-        def __init__(self, state, p, bfs_delta=0):
+        def __init__(self, state, p, bfs_puct_adj=0.0):
             self.state = state # State
             self.p = p # Policy
             self.w = 0 # Cumulative value
             self.n = 0 # Number of simulations
             self.child_nodes = None  # Child nodes
-            self.bfs_delta = bfs_delta  # dist[action] - current_dist; negative = advancing
+            self.bfs_puct_adj = bfs_puct_adj  # Pre-computed signed PUCT offset (added directly)
 
         # Calculate value of the state
         def evaluate(self):
@@ -130,27 +147,63 @@ def pv_mcts_scores(model, state, temperature, add_noise=False, use_q_selection=F
             # If there are no child nodes
             if not self.child_nodes:
                 # Get policy and value from neural network inference
-                policies, value = predict(model, self.state)
+                policies, value = predict(model, self.state,
+                    pos_boost=pos_boost, bfs_boost=bfs_boost,
+                    bfs_penalty=bfs_penalty, bfs_floor=bfs_floor,
+                    bfs_retreat_ceiling=bfs_retreat_ceiling)
 
                 # Update cumulative value and number of simulations
                 self.w += value
                 self.n += 1
 
-                # Compute BFS deltas for pawn moves once at expansion
+                # Compute BFS-based PUCT adjustments once at expansion
                 N = self.state.N
-                if BFS_PUCT_BONUS != 0.0:
+                need_bfs = (_retreat != 0.0 or _advance != 0.0 or _wall != 0.0)
+                if need_bfs:
                     walls_t = tuple(self.state.walls)
                     h_e, v_e = _get_blocked_edges(N, walls_t)
                     dist = _bfs_goal_distances(N, h_e, v_e, 0)
                     cur = dist[self.state.player[0]]
+                    if _wall != 0.0:
+                        # Enemy BFS: rotated walls + goal row 0 — mirrors bfs_distances() / next()
+                        walls_rot = tuple(reversed(walls_t))
+                        h_r, v_r = _get_blocked_edges(N, walls_rot)
+                        dist_opp = _bfs_goal_distances(N, h_r, v_r, 0)
+                        opp_cur = dist_opp[self.state.enemy[0]]
+                    else:
+                        dist_opp = None; opp_cur = 0
                 else:
-                    dist = None; cur = 0
+                    dist = None; cur = 0; dist_opp = None; opp_cur = 0
 
-                # Expand child nodes
+                # Expand child nodes with pre-computed PUCT adjustments
                 self.child_nodes = []
                 for action, policy in zip(self.state.legal_actions(), policies):
-                    delta = int(dist[action] - cur) if (dist is not None and action < N * N) else 0
-                    self.child_nodes.append(Node(self.state.next(action), policy, delta))
+                    child_state = self.state.next(action)
+                    if dist is not None and action < N * N:
+                        delta = dist[action] - cur
+                        if delta < 0:   # advancing toward goal
+                            adj = _advance * (-delta)
+                        elif delta > 0: # retreating from goal
+                            adj = -_retreat * delta
+                        else:
+                            adj = 0.0
+                    elif dist_opp is not None and action >= N * N:
+                        # Wall move: net bonus = scale × (opp_increase - our_increase)²
+                        h_e_w, v_e_w = _get_blocked_edges(N, tuple(child_state.walls))
+                        opp_new = _bfs_goal_distances(N, h_e_w, v_e_w, 0)[child_state.player[0]]
+                        opp_delta = opp_new - opp_cur
+                        new_walls = list(walls_t)
+                        if action < N * N + (N - 1) ** 2:
+                            new_walls[action - N * N] = 1
+                        else:
+                            new_walls[action - N * N - (N - 1) ** 2] = 2
+                        h_e_w2, v_e_w2 = _get_blocked_edges(N, tuple(new_walls))
+                        our_new = _bfs_goal_distances(N, h_e_w2, v_e_w2, 0)[self.state.player[0]]
+                        net_delta = opp_delta - (our_new - cur)
+                        adj = _wall * net_delta if net_delta > 0 else 0.0
+                    else:
+                        adj = 0.0
+                    self.child_nodes.append(Node(child_state, policy, adj))
                 return value
 
             # If there are child nodes
@@ -174,7 +227,7 @@ def pv_mcts_scores(model, state, temperature, add_noise=False, use_q_selection=F
                 pucb_values.append(
                     q
                     + C_PUCT * child_node.p * sqrt(t) / (1 + child_node.n)
-                    - BFS_PUCT_BONUS * child_node.bfs_delta
+                    + child_node.bfs_puct_adj
                 )
 
             # Return child node with the maximum arc evaluation value
@@ -193,7 +246,7 @@ def pv_mcts_scores(model, state, temperature, add_noise=False, use_q_selection=F
             child.p = (1 - DIRICHLET_EPSILON) * child.p + DIRICHLET_EPSILON * n
 
     # Perform remaining evaluations
-    for _ in range(PV_EVALUATE_COUNT - 1):
+    for _ in range(_sims - 1):
         root_node.evaluate()
 
     # Probability distribution of legal moves
@@ -223,13 +276,13 @@ def pv_mcts_full(model, state, rollouts):
     collapses to one-hot) and also returns the root Q value (tanh scale).
     """
     class Node:
-        def __init__(self, state, p, bfs_delta=0):
+        def __init__(self, state, p, bfs_puct_adj=0.0):
             self.state = state
             self.p = p
             self.w = 0.0
             self.n = 0
             self.child_nodes = None
-            self.bfs_delta = bfs_delta
+            self.bfs_puct_adj = bfs_puct_adj
 
         def evaluate(self):
             if self.state.is_done():
@@ -240,18 +293,46 @@ def pv_mcts_full(model, state, rollouts):
                 policies, value = predict(model, self.state)
                 self.w += value; self.n += 1
                 N = self.state.N
-                if BFS_PUCT_BONUS != 0.0:
+                need_bfs = (BFS_PUCT_RETREAT_PENALTY != 0.0 or BFS_PUCT_ADVANCE_BONUS != 0.0 or BFS_WALL_PUCT_SCALE != 0.0)
+                if need_bfs:
                     walls_t = tuple(self.state.walls)
                     h_e, v_e = _get_blocked_edges(N, walls_t)
                     dist = _bfs_goal_distances(N, h_e, v_e, 0)
                     cur = dist[self.state.player[0]]
+                    if BFS_WALL_PUCT_SCALE != 0.0:
+                        # Enemy BFS: rotated walls + goal row 0 — mirrors bfs_distances() / next()
+                        walls_rot = tuple(reversed(walls_t))
+                        h_r, v_r = _get_blocked_edges(N, walls_rot)
+                        dist_opp = _bfs_goal_distances(N, h_r, v_r, 0)
+                        opp_cur = dist_opp[self.state.enemy[0]]
+                    else:
+                        dist_opp = None; opp_cur = 0
                 else:
-                    dist = None; cur = 0
-                self.child_nodes = [
-                    Node(self.state.next(a), p,
-                         int(dist[a] - cur) if (dist is not None and a < N * N) else 0)
-                    for a, p in zip(self.state.legal_actions(), policies)
-                ]
+                    dist = None; cur = 0; dist_opp = None; opp_cur = 0
+                child_nodes_tmp = []
+                for a, p in zip(self.state.legal_actions(), policies):
+                    cs = self.state.next(a)
+                    if dist is not None and a < N * N:
+                        d = dist[a] - cur
+                        adj = BFS_PUCT_ADVANCE_BONUS * (-d) if d < 0 else (-BFS_PUCT_RETREAT_PENALTY * d if d > 0 else 0.0)
+                    elif dist_opp is not None and a >= N * N:
+                        # Wall move: net bonus = scale × (opp_increase - our_increase)²
+                        h_e_w, v_e_w = _get_blocked_edges(N, tuple(cs.walls))
+                        opp_new = _bfs_goal_distances(N, h_e_w, v_e_w, 0)[cs.player[0]]
+                        opp_delta = opp_new - opp_cur
+                        new_walls = list(walls_t)
+                        if a < N * N + (N - 1) ** 2:
+                            new_walls[a - N * N] = 1
+                        else:
+                            new_walls[a - N * N - (N - 1) ** 2] = 2
+                        h_e_w2, v_e_w2 = _get_blocked_edges(N, tuple(new_walls))
+                        our_new = _bfs_goal_distances(N, h_e_w2, v_e_w2, 0)[self.state.player[0]]
+                        net_delta = opp_delta - (our_new - cur)
+                        adj = BFS_WALL_PUCT_SCALE * net_delta if net_delta > 0 else 0.0
+                    else:
+                        adj = 0.0
+                    child_nodes_tmp.append(Node(cs, p, adj))
+                self.child_nodes = child_nodes_tmp
                 return value
             value = -self.next_child_node().evaluate()
             self.w += value; self.n += 1
@@ -263,7 +344,7 @@ def pv_mcts_full(model, state, rollouts):
             return self.child_nodes[np.argmax([
                 (-c.w / c.n if c.n else fpu)
                 + C_PUCT * c.p * sqrt(t) / (1 + c.n)
-                - BFS_PUCT_BONUS * c.bfs_delta
+                + c.bfs_puct_adj
                 for c in self.child_nodes
             ])]
 
