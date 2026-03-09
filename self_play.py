@@ -313,10 +313,10 @@ def self_play(cycle_num=None):
 
     if SP_RESIGN_THRESHOLD is not None:
         resign_pct = 100 * resign_count / resign_eligible_count if resign_eligible_count else 0
-        threshold_games = resign_count + false_resign_count
-        false_resign_pct = round(100 * false_resign_count / threshold_games, 1) if threshold_games else 0
+        monitoring_count = SP_GAME_COUNT - resign_eligible_count
+        false_resign_pct = round(100 * false_resign_count / monitoring_count, 1) if monitoring_count else 0
         print(f'Resignations: {resign_count}/{resign_eligible_count} eligible ({resign_pct:.0f}%)  '
-              f'| False-resign: {false_resign_count}/{threshold_games} ({false_resign_pct:.1f}% of threshold games)')
+              f'| False-resign: {false_resign_count}/{monitoring_count} monitoring ({false_resign_pct:.1f}%)')
 
     return {
         'W_pct':              100 * outcomes['W'] / total,

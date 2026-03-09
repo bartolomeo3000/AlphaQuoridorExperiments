@@ -84,7 +84,12 @@ function initCharts() {
   charts.eval = mkChart('c-eval', 'line', [
     { label: 'Eval Score', data: [], borderColor: '#5ee8c0', backgroundColor: color('#5ee8c0', 0.1), fill: true, tension: 0.3 },
     { label: 'Promote Threshold', data: [], borderColor: '#e05c6a', borderDash: [6,3], pointRadius: 0 },
-  ]);
+  ], {
+    scales: {
+      x: CHART_DEFAULTS.scales.x,
+      y: { ...CHART_DEFAULTS.scales.y, min: 0},
+    },
+  });
 
   charts.loss = mkChart('c-loss', 'line', [
     { label: 'Total Loss',  data: [], borderColor: '#7c6af7', backgroundColor: 'transparent', tension: 0.3 },
@@ -96,7 +101,12 @@ function initCharts() {
     { label: 'vs Random', data: [], borderColor: '#4caf7d', backgroundColor: 'transparent', tension: 0.3 },
     { label: 'vs Greedy', data: [], borderColor: '#e0a84a', backgroundColor: 'transparent', tension: 0.3 },
     { label: 'vs BFS',    data: [], borderColor: '#e05c6a', backgroundColor: 'transparent', tension: 0.3 },
-  ]);
+  ], {
+    scales: {
+      x: CHART_DEFAULTS.scales.x,
+      y: { ...CHART_DEFAULTS.scales.y, min: 0},
+    },
+  });
 
   charts.timing = mkChart('c-timing', 'bar', [
     { label: 'Self-Play', data: [], backgroundColor: color('#7c6af7', 0.8), stack: 's' },
@@ -189,7 +199,7 @@ function updateCharts(rows) {
 
   setData(charts.eval, cycles,
     rows.map(r => r.eval_score),
-    rows.map(() => 0.55),   // EN_PROMOTE_THRESHOLD default
+    rows.map(() => 0.50),   // EN_PROMOTE_THRESHOLD
   );
 
   setData(charts.loss, cycles,
