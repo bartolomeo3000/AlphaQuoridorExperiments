@@ -155,7 +155,7 @@ function renderStep() {
   document.getElementById('move-info').textContent = moveText;
 
   // Refresh analysis panel if open
-  if (analysisEnabled && allStates.length) fetchAndRenderAnalysis(allStates[stepIdx]);
+  if (analysisEnabled && allStates.length) fetchAndRenderAnalysis(allStates[stepIdx], getAnalysisRollouts());
 }
 
 function updateGameInfo() {
@@ -240,7 +240,7 @@ function toggleAnalysis() {
   btn.classList.toggle('btn-primary', analysisEnabled);
   document.getElementById('analysis-panel').classList.toggle('hidden', !analysisEnabled);
   document.getElementById('rollout-wrap-replay').style.display = analysisEnabled ? '' : 'none';
-  if (analysisEnabled && allStates.length) fetchAndRenderAnalysis(allStates[stepIdx]);
+  if (analysisEnabled && allStates.length) fetchAndRenderAnalysis(allStates[stepIdx], getAnalysisRollouts());
 }
 
 function toggleAutoMCTS() {
@@ -248,6 +248,7 @@ function toggleAutoMCTS() {
   const btn = document.getElementById('btn-mcts-auto');
   btn.textContent = autoMCTS ? 'Auto MCTS: On' : 'Auto MCTS: Off';
   btn.classList.toggle('btn-primary', autoMCTS);
+  if (autoMCTS && analysisEnabled && allStates.length) fetchAndRenderAnalysis(allStates[stepIdx], getAnalysisRollouts());
 }
 
 function getAnalysisRollouts() {

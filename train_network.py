@@ -89,8 +89,8 @@ def train_network():
     model = load_model(os.path.join(MODEL_DIR, 'best.pt'))
     model.train()
 
-    # Optimiser — weight_decay provides L2 regularisation equivalent to Keras' kernel_regularizer
-    optimizer = optim.Adam(model.parameters(), lr=LR, weight_decay=WEIGHT_DECAY)
+    # Optimiser — AdamW decouples weight decay from the adaptive update, giving true L2 regularisation
+    optimizer = optim.AdamW(model.parameters(), lr=LR, weight_decay=WEIGHT_DECAY)
 
     # Mixed precision scaler — ~1.5-2x speedup on modern NVIDIA GPUs
     use_amp = (DEVICE.type == 'cuda')

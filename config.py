@@ -51,7 +51,7 @@ BFS_PUCT_RETREAT_PENALTY= 0.2  # PUCT penalty subtracted for pawn moves that ret
                                 # Discourages the tree from exploring backward steps.
 BFS_WALL_PUCT_SCALE     = 0.01  # PUCT bonus for wall moves = scale × (Δopp - Δself).
                                 # Linear: each net BFS step blocked adds a flat bonus.
-BFS_PUCT_DECAY          = True  # True  → adj added to prior p, decays as sqrt(t)/(1+n).
+BFS_PUCT_DECAY          = False  # True  → adj added to prior p, decays as sqrt(t)/(1+n).
                                 # False → adj added as flat constant (old behaviour).
 
 # ── Self-play ─────────────────────────────────────────────────────────────────
