@@ -403,7 +403,7 @@ class State:
                                 if ny > 0 and walls[wp - (N - 1) - 1] != 2:
                                     nnp = np - 1
                                     actions.append(nnp)
-                                elif (ny == 0 and walls[wp - (N - 1)] != 1) or (ny > 0 and walls[wp - (N - 1) - 1] != 2 and walls[wp - (N - 1)] != 1):
+                                elif (ny == 0 and walls[wp - (N - 1)] != 1) or (ny > 0 and walls[wp - (N - 1) - 1] != 1 and walls[wp - (N - 1)] != 1):
                                     nnp = np - N
                                     actions.append(nnp)
                     else:
@@ -415,10 +415,10 @@ class State:
                                     nnp = np - 1
                                     actions.append(nnp)
                                 else:
-                                    if (ny == 0 and walls[wp - (N - 1)] != 1) or (ny > 0 and walls[wp - (N - 1) - 1] != 2 and walls[wp - (N - 1)] != 1):
+                                    if (ny == 0 and walls[wp - (N - 1)] != 1) or (ny > 0 and walls[wp - (N - 1) - 1] != 1 and walls[wp - (N - 1)] != 1):
                                         nnp = np - N
                                         actions.append(nnp)
-                                    if (ny == 0 and walls[wp] != 1) or (ny > 0 and (walls[wp - 1] != 1 or walls[wp] != 1)):
+                                    if (ny == 0 and walls[wp] != 1) or (ny > 0 and (walls[wp - 1] != 1 and walls[wp] != 1)):
                                         nnp = np + N
                                         actions.append(nnp)
                 if ny > y:
@@ -456,7 +456,7 @@ class State:
                                     if (ny == (N - 1) and walls[wp - (N - 1) - 1] != 1) or (ny < (N - 1) and walls[wp - (N - 1) - 1] != 1 and walls[wp - (N - 1)] != 1):
                                         nnp = np - N
                                         actions.append(nnp)
-                                    if (ny == (N - 1) and walls[wp - 1] != 1) or (ny < (N - 1) and (walls[wp - 1] != 1 or walls[wp] != 1)):
+                                    if (ny == (N - 1) and walls[wp - 1] != 1) or (ny < (N - 1) and (walls[wp - 1] != 1 and walls[wp] != 1)):
                                         nnp = np + N
                                         actions.append(nnp)
 

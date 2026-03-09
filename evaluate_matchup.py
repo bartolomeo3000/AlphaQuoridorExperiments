@@ -30,7 +30,7 @@ from dual_network import DualNetwork, load_model
 from config import (
     MODEL_DIR, EN_TEMPERATURE, EN_TEMP_CUTOFF, EN_FORCED_OPENING,
     POSITION_PRIOR_BOOST, BFS_MOVE_BOOST, BFS_MOVE_PENALTY, BFS_ADVANCE_FLOOR,
-    BFS_PUCT_RETREAT_PENALTY, BFS_PUCT_ADVANCE_BONUS, BFS_WALL_PUCT_SCALE,
+    BFS_PUCT_RETREAT_PENALTY, BFS_PUCT_ADVANCE_BONUS, BFS_WALL_PUCT_SCALE, BFS_PUCT_DECAY,
     PV_EVALUATE_COUNT,
 )
 from pv_mcts import pv_mcts_scores
@@ -40,8 +40,8 @@ from pv_mcts import pv_mcts_scores
 
 def _worker(args):
     sd_bytes_a, sd_bytes_b, game_idx, \
-        pos_boost_a, bfs_boost_a, bfs_penalty_a, bfs_floor_a, bfs_retreat_a, bfs_wall_a, bfs_advance_a, \
-        pos_boost_b, bfs_boost_b, bfs_penalty_b, bfs_floor_b, bfs_retreat_b, bfs_wall_b, bfs_advance_b, \
+        pos_boost_a, bfs_boost_a, bfs_penalty_a, bfs_floor_a, bfs_retreat_a, bfs_wall_a, bfs_advance_a, decay_a, \
+        pos_boost_b, bfs_boost_b, bfs_penalty_b, bfs_floor_b, bfs_retreat_b, bfs_wall_b, bfs_advance_b, decay_b, \
         sims_a, sims_b, temperature, temp_cutoff, opening_actions = args
 
     model_a = DualNetwork()
@@ -73,12 +73,14 @@ def _worker(args):
             scores = pv_mcts_scores(model_a, deepcopy(state), t,
                 sims=sims_a, pos_boost=pos_boost_a, bfs_boost=bfs_boost_a,
                 bfs_penalty=bfs_penalty_a, bfs_floor=bfs_floor_a,
-                bfs_retreat_penalty=bfs_retreat_a, bfs_wall_scale=bfs_wall_a, bfs_advance_bonus=bfs_advance_a)
+                bfs_retreat_penalty=bfs_retreat_a, bfs_wall_scale=bfs_wall_a, bfs_advance_bonus=bfs_advance_a,
+                bfs_puct_decay=decay_a)
         else:
             scores = pv_mcts_scores(model_b, deepcopy(state), t,
                 sims=sims_b, pos_boost=pos_boost_b, bfs_boost=bfs_boost_b,
                 bfs_penalty=bfs_penalty_b, bfs_floor=bfs_floor_b,
-                bfs_retreat_penalty=bfs_retreat_b, bfs_wall_scale=bfs_wall_b, bfs_advance_bonus=bfs_advance_b)
+                bfs_retreat_penalty=bfs_retreat_b, bfs_wall_scale=bfs_wall_b, bfs_advance_bonus=bfs_advance_b,
+                bfs_puct_decay=decay_b)
         action = int(np.random.choice(state.legal_actions(), p=scores))
         all_actions.append(action)
         state = state.next(action)
@@ -128,6 +130,7 @@ def run_matchup(cfg, on_game=None, cancel_flag=None):
     retreat_a  = cfg.get('retreat_a',  BFS_PUCT_RETREAT_PENALTY)
     wall_a     = cfg.get('wall_a',     BFS_WALL_PUCT_SCALE)
     advance_a  = cfg.get('advance_a',  BFS_PUCT_ADVANCE_BONUS)
+    decay_a    = cfg.get('decay_a',    BFS_PUCT_DECAY)
     sims_a     = cfg.get('sims_a',     PV_EVALUATE_COUNT)
     pos_b      = cfg.get('pos_b',      POSITION_PRIOR_BOOST)
     bfs_b      = cfg.get('bfs_b',      BFS_MOVE_BOOST)
@@ -136,6 +139,7 @@ def run_matchup(cfg, on_game=None, cancel_flag=None):
     retreat_b  = cfg.get('retreat_b',  BFS_PUCT_RETREAT_PENALTY)
     wall_b     = cfg.get('wall_b',     BFS_WALL_PUCT_SCALE)
     advance_b  = cfg.get('advance_b',  BFS_PUCT_ADVANCE_BONUS)
+    decay_b    = cfg.get('decay_b',    BFS_PUCT_DECAY)
     sims_b     = cfg.get('sims_b',     PV_EVALUATE_COUNT)
 
     n_pairs = cfg['games'] // 2
@@ -152,8 +156,8 @@ def run_matchup(cfg, on_game=None, cancel_flag=None):
         for _, game_idx in enumerate([pair_idx * 2, pair_idx * 2 + 1]):
             worker_args.append((
                 sd_bytes_a, sd_bytes_b, game_idx,
-                pos_a, bfs_a, penalty_a, floor_a, retreat_a, wall_a, advance_a,
-                pos_b, bfs_b, penalty_b, floor_b, retreat_b, wall_b, advance_b,
+                pos_a, bfs_a, penalty_a, floor_a, retreat_a, wall_a, advance_a, decay_a,
+                pos_b, bfs_b, penalty_b, floor_b, retreat_b, wall_b, advance_b, decay_b,
                 sims_a, sims_b,
                 EN_TEMPERATURE, EN_TEMP_CUTOFF,
                 opening_actions,

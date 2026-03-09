@@ -252,6 +252,7 @@ def api_matchup_start():
         'retreat_a': float(body.get('retreat_a', _cfg.BFS_PUCT_RETREAT_PENALTY)),
         'wall_a':    float(body.get('wall_a',    _cfg.BFS_WALL_PUCT_SCALE)),
         'advance_a': float(body.get('advance_a', _cfg.BFS_PUCT_ADVANCE_BONUS)),
+        'decay_a':   bool(body.get('decay_a',   _cfg.BFS_PUCT_DECAY)),
         'sims_a':    int(body.get('sims_a', _cfg.PV_EVALUATE_COUNT)),
         'pos_b':     float(body.get('pos_b',     _cfg.POSITION_PRIOR_BOOST)),
         'bfs_b':     float(body.get('bfs_b',     _cfg.BFS_MOVE_BOOST)),
@@ -260,6 +261,7 @@ def api_matchup_start():
         'retreat_b': float(body.get('retreat_b', _cfg.BFS_PUCT_RETREAT_PENALTY)),
         'wall_b':    float(body.get('wall_b',    _cfg.BFS_WALL_PUCT_SCALE)),
         'advance_b': float(body.get('advance_b', _cfg.BFS_PUCT_ADVANCE_BONUS)),
+        'decay_b':   bool(body.get('decay_b',   _cfg.BFS_PUCT_DECAY)),
         'sims_b':    int(body.get('sims_b', _cfg.PV_EVALUATE_COUNT)),
     }
 

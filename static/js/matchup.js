@@ -49,6 +49,7 @@ async function startMatchup() {
     retreat_a:    parseFloat(document.getElementById('ma-retreat').value),
     wall_a:       parseFloat(document.getElementById('ma-wallscale').value),
     sims_a:    parseInt(document.getElementById('ma-sims').value, 10),
+    decay_a:   document.getElementById('ma-decay').checked,
     pos_b:     parseFloat(document.getElementById('mb-pos').value),
     bfs_b:     parseFloat(document.getElementById('mb-bfs').value),
     penalty_b: parseFloat(document.getElementById('mb-penalty').value),
@@ -57,6 +58,7 @@ async function startMatchup() {
     retreat_b:    parseFloat(document.getElementById('mb-retreat').value),
     wall_b:       parseFloat(document.getElementById('mb-wallscale').value),
     sims_b:    parseInt(document.getElementById('mb-sims').value, 10),
+    decay_b:   document.getElementById('mb-decay').checked,
     games:     parseInt(document.getElementById('m-games').value, 10),
   };
   lastCfg = cfg;

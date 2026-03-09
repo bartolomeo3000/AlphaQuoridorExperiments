@@ -16,6 +16,7 @@ from config import (
     PV_EVALUATE_COUNT, C_PUCT, DIRICHLET_ALPHA, DIRICHLET_EPSILON, POSITION_PRIOR_BOOST,
     BFS_MOVE_BOOST, BFS_MOVE_PENALTY, BFS_ADVANCE_FLOOR, BFS_RETREAT_CEILING,
     FPU_REDUCTION, BFS_PUCT_RETREAT_PENALTY, BFS_PUCT_ADVANCE_BONUS, BFS_WALL_PUCT_SCALE,
+    BFS_PUCT_DECAY,
 )
 
 # Inference
@@ -115,12 +116,14 @@ def nodes_to_scores(nodes):
 def pv_mcts_scores(model, state, temperature, add_noise=False, use_q_selection=False, return_root_q=False,
                    sims=None, pos_boost=None, bfs_boost=None, bfs_penalty=None,
                    bfs_floor=None, bfs_retreat_ceiling=None,
-                   bfs_retreat_penalty=None, bfs_advance_bonus=None, bfs_wall_scale=None):
+                   bfs_retreat_penalty=None, bfs_advance_bonus=None, bfs_wall_scale=None,
+                   bfs_puct_decay=None):
     # Resolve per-call overrides; None → global config
     _sims    = PV_EVALUATE_COUNT        if sims                is None else sims
     _retreat = BFS_PUCT_RETREAT_PENALTY if bfs_retreat_penalty is None else bfs_retreat_penalty
     _advance = BFS_PUCT_ADVANCE_BONUS   if bfs_advance_bonus   is None else bfs_advance_bonus
     _wall    = BFS_WALL_PUCT_SCALE      if bfs_wall_scale      is None else bfs_wall_scale
+    _decay   = BFS_PUCT_DECAY           if bfs_puct_decay      is None else bfs_puct_decay
     # Define Monte Carlo Tree Search node
     class Node:
         # Initialize node
@@ -130,7 +133,7 @@ def pv_mcts_scores(model, state, temperature, add_noise=False, use_q_selection=F
             self.w = 0 # Cumulative value
             self.n = 0 # Number of simulations
             self.child_nodes = None  # Child nodes
-            self.bfs_puct_adj = bfs_puct_adj  # Pre-computed signed PUCT offset (added directly)
+            self.bfs_puct_adj = bfs_puct_adj  # Added to prior p inside exploration term — decays with visit count
 
         # Calculate value of the state
         def evaluate(self):
@@ -225,6 +228,9 @@ def pv_mcts_scores(model, state, temperature, add_noise=False, use_q_selection=F
             for child_node in self.child_nodes:
                 q = (-child_node.w / child_node.n if child_node.n else fpu)
                 pucb_values.append(
+                    q
+                    + (C_PUCT * child_node.p + child_node.bfs_puct_adj) * sqrt(t) / (1 + child_node.n)
+                    if _decay else
                     q
                     + C_PUCT * child_node.p * sqrt(t) / (1 + child_node.n)
                     + child_node.bfs_puct_adj
@@ -342,6 +348,9 @@ def pv_mcts_full(model, state, rollouts):
             t = sum(c.n for c in self.child_nodes)
             fpu = (self.w / self.n - FPU_REDUCTION) if (FPU_REDUCTION is not None and self.n) else 0.0
             return self.child_nodes[np.argmax([
+                (-c.w / c.n if c.n else fpu)
+                + (C_PUCT * c.p + c.bfs_puct_adj) * sqrt(t) / (1 + c.n)
+                if BFS_PUCT_DECAY else
                 (-c.w / c.n if c.n else fpu)
                 + C_PUCT * c.p * sqrt(t) / (1 + c.n)
                 + c.bfs_puct_adj

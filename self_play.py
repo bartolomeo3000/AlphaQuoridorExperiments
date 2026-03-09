@@ -21,7 +21,7 @@ from copy import deepcopy
 from config import (
     SP_GAME_COUNT, SP_TEMPERATURE, TEMP_CUTOFF, SP_NUM_WORKERS, OPENING_DEPTH,
     DRAW_SHAPE_SCALE, MODEL_DIR, DATA_DIR, SP_CKPT_EVERY, USE_BFS_CHANNELS,
-    SP_FORCED_OPENING, SP_RESIGN_THRESHOLD, SP_RESIGN_CHECK_RATE,
+    SP_FORCED_OPENING, SP_RESIGN_THRESHOLD, SP_RESIGN_CHECK_RATE, SP_OPENING_RATE,
 )
 
 # Persistent pool — created once, reused across all training cycles so workers
@@ -96,7 +96,7 @@ def play(model):
     wall_count = 0
 
     # Random opening: half of games play from the true start position, half get a random opening.
-    opening_len = SP_FORCED_OPENING if np.random.random() < 0.5 else 0
+    opening_len = SP_FORCED_OPENING if np.random.random() < SP_OPENING_RATE else 0
     for _ in range(opening_len):
         if state.is_done():
             break
