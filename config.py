@@ -62,7 +62,7 @@ SP_NUM_WORKERS      = max(1, mp.cpu_count() - 1)  # CPU workers; leaves one core
 SP_FORCED_OPENING    = 2      # Random moves played at game start before MCTS (not recorded in history)
 SP_RESIGN_THRESHOLD  = -0.97  # Resign if MCTS root Q drops below this (None = disabled)
                               # Q ≈ -0.95 → ~2.5% win probability; stricter than AlphaZero default (-0.90)
-SP_RESIGN_CHECK_RATE = 0.70   # Fraction of games that skip resignation for false-resign detection.
+SP_RESIGN_CHECK_RATE = 1   # Fraction of games that skip resignation for false-resign detection.
                               # After training, false-resign candidates (Q<threshold AND game recovered)
 SP_OPENING_RATE      = 0.30   # Fraction of games that start with SP_FORCED_OPENING random moves;
                               # the rest start from the initial position.
@@ -73,7 +73,7 @@ POLICY_TARGET_BLEND = 0.0   # Unused / disabled.
 # ── Training ──────────────────────────────────────────────────────────────────
 NUM_EPOCH            = 100      # Epochs per training phase
 BATCH_SIZE           = 256
-REPLAY_BUFFER_CYCLES = 10        # How many most-recent history files to train on
+REPLAY_BUFFER_CYCLES = 16        # How many most-recent history files to train on
 LR                   = 0.001    # Adam initial learning rate
 LR_MIN               = 0.00025  # Cosine-annealing floor (reached at epoch NUM_EPOCH)
 WEIGHT_DECAY         = 0.0005   # L2 regularisation (equivalent to Keras kernel_regularizer)
