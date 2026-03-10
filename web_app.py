@@ -10,6 +10,7 @@
 # API endpoints under /api/...
 
 import os
+import re
 import csv
 import glob
 import json
@@ -25,7 +26,7 @@ from flask import (
 )
 
 # ── project imports ───────────────────────────────────────────────────────────
-from config import LOGS_DIR, MODEL_DIR, USE_BFS_CHANNELS
+from config import LOGS_DIR, MODEL_DIR, USE_BFS_CHANNELS, DRAW_DEPTH
 from game import State, _get_blocked_edges, _bfs_goal_distances
 from dual_network import load_model, DN_INPUT_SHAPE
 from pv_mcts import pv_mcts_scores, predict, pv_mcts_full
@@ -189,6 +190,11 @@ def logs_page():
 @app.route('/matchup')
 def matchup_page():
     return render_template('matchup.html')
+
+
+@app.route('/rules')
+def rules_page():
+    return render_template('rules.html', draw_depth=DRAW_DEPTH)
 
 # ── API: matchup ──────────────────────────────────────────────────────
 
@@ -392,6 +398,46 @@ def api_stats():
     return jsonify(rows)
 
 
+# ── API: per-epoch loss curve ────────────────────────────────────────────────
+
+@app.route('/api/loss_curve')
+def api_loss_curve():
+    log_files = glob.glob(os.path.join(LOGS_DIR, '*.log'))
+    if not log_files:
+        return jsonify({'epochs': [], 'total': [], 'policy': [], 'value': [], 'cycle': None})
+    latest = max(log_files, key=os.path.getmtime)
+    pattern = re.compile(
+        r'Training epoch\s+(\d+)/\d+\s+loss=([\d.]+)\s+loss_policy=([\d.]+)\s+loss_value=([\d.]+)'
+    )
+    blocks, current = [], []
+    with open(latest, 'r', encoding='utf-8', errors='replace') as f:
+        for line in f:
+            m = pattern.search(line)
+            if m:
+                current.append(m)
+            elif current:
+                blocks.append(current)
+                current = []
+    if current:
+        blocks.append(current)
+    if not blocks:
+        return jsonify({'epochs': [], 'total': [], 'policy': [], 'value': [], 'cycle': None})
+    epochs, total, policy, value = [], [], [], []
+    for m in blocks[-1]:
+        epochs.append(int(m.group(1)))
+        total.append(float(m.group(2)))
+        policy.append(float(m.group(3)))
+        value.append(float(m.group(4)))
+    cycle = None
+    stats_path = os.path.join(LOGS_DIR, 'stats.csv')
+    if os.path.exists(stats_path):
+        with open(stats_path, 'r', encoding='utf-8') as f:
+            rows = list(csv.DictReader(f))
+        if rows:
+            cycle = rows[-1]['cycle']
+    return jsonify({'epochs': epochs, 'total': total, 'policy': policy, 'value': value, 'cycle': cycle})
+
+
 # ── API: eval games ───────────────────────────────────────────────────────────
 
 @app.route('/api/eval_games')
@@ -515,6 +561,10 @@ def api_play_move():
     state = state.next(action)
     display = _state_to_display(state)
     display['ai_action'] = None
+
+    # Allow client to update the mode mid-game (switching between vs_ai and 2-player)
+    if 'vs_human' in data:
+        session['vs_human'] = bool(data['vs_human'])
 
     if state.is_done() or session.get('vs_human', False):
         session['game'] = _serialize_state(state)

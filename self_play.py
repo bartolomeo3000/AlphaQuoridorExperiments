@@ -22,6 +22,7 @@ from config import (
     SP_GAME_COUNT, SP_TEMPERATURE, TEMP_CUTOFF, SP_NUM_WORKERS, OPENING_DEPTH,
     DRAW_SHAPE_SCALE, MODEL_DIR, DATA_DIR, SP_CKPT_EVERY, USE_BFS_CHANNELS,
     SP_FORCED_OPENING, SP_RESIGN_THRESHOLD, SP_RESIGN_CHECK_RATE, SP_OPENING_RATE,
+    FIXED_OPENING_ACTIONS,
 )
 
 # Persistent pool — created once, reused across all training cycles so workers
@@ -95,13 +96,21 @@ def play(model):
     move_num = 0
     wall_count = 0
 
-    # Random opening: half of games play from the true start position, half get a random opening.
+    # Apply fixed opening silently (deterministic, not recorded in history)
+    for action in FIXED_OPENING_ACTIONS:
+        state = state.next(action)
+
+    # Random opening: some games play from the fixed position, others get extra random moves.
     opening_len = SP_FORCED_OPENING if np.random.random() < SP_OPENING_RATE else 0
+    actual_random_opening = 0
     for _ in range(opening_len):
         if state.is_done():
             break
         action = np.random.choice(state.legal_actions())
+        if action >= N * N:
+            wall_count += 1
         state = state.next(action)
+        actual_random_opening += 1
 
     # Resign setup: 10% of games skip resignation for false-resign detection
     resign_enabled = SP_RESIGN_THRESHOLD is not None
@@ -183,7 +192,7 @@ def play(model):
         for i in range(len(history)):            
             history[i][2] = value
             value = -value
-    return history, outcome, tuple(opening), move_num, wall_count, resigned, would_have_resigned, (resign_enabled and not no_resign)
+    return history, outcome, tuple(opening), move_num + len(FIXED_OPENING_ACTIONS) + actual_random_opening, wall_count, resigned, would_have_resigned, (resign_enabled and not no_resign)
 
 # Worker function: plays exactly one game. Defined at module level so it can
 # be pickled on Windows (spawn). Model weights are passed as bytes each call

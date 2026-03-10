@@ -59,6 +59,31 @@
       <button class="btn" id="btn-resign" style="width:100%;margin-top:6px">Resign / New Game</button>
 
       <hr style="border-color:var(--border);margin:14px 0">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+        <div>
+          <div class="text-dim" style="font-size:0.75rem;margin-bottom:4px">Game mode</div>
+          <select id="game-mode-select" style="width:100%" onchange="onGameModeChange()">
+            <option value="1">vs AI — P1</option>
+            <option value="2">vs AI — P2</option>
+            <option value="0">2 Players</option>
+          </select>
+        </div>
+        <div>
+          <div class="text-dim" style="font-size:0.75rem;margin-bottom:4px">AI rollouts</div>
+          <select id="game-rollout-select" style="width:100%">
+            <option value="100">100</option>
+            <option value="200">200</option>
+            <option value="400" selected>400</option>
+            <option value="800">800</option>
+            <option value="2000">2000</option>
+            <option value="4000">4000</option>
+            <option value="10000">10000</option>
+            <option value="20000">20000</option>
+            <option value="100000">100000</option>
+          </select>
+        </div>
+      </div>
+      <hr style="border-color:var(--border);margin:14px 0">
       <button class="btn" id="btn-analysis-toggle" onclick="toggleAnalysis()" style="width:100%">🔬 Show Analysis</button>
     </div>
 
@@ -66,6 +91,7 @@
     <div class="play-info hidden" id="result-panel">
       <div id="result-text" class="turn-indicator turn-done" style="margin-bottom:12px">—</div>
       <button class="btn btn-primary" id="btn-again" style="width:100%">Play Again</button>
+      <button class="btn" id="btn-undo-result" style="width:100%;margin-top:6px" onclick="undoMove()" disabled>&#8617; Undo last move</button>
     </div>
 
     <div id="spinner-wrap" class="hidden" style="text-align:center;padding:10px">

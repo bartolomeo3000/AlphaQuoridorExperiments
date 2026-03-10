@@ -10,7 +10,7 @@ from dual_network import load_model, DualNetwork, DN_OUTPUT_SIZE
 from config import (
     EN_GAME_COUNT, EN_TEMPERATURE, EN_TEMP_CUTOFF, EN_FORCED_OPENING,
     EN_PROMOTE_THRESHOLD, EN_DRAW_DISTANCE_SCORING, DRAW_SHAPE_SCALE,
-    MODEL_DIR, USE_BFS_CHANNELS, OPENING_DEPTH, LOGS_DIR,
+    MODEL_DIR, USE_BFS_CHANNELS, OPENING_DEPTH, LOGS_DIR, FIXED_OPENING_ACTIONS,
 )
 from shutil import copy
 from copy import deepcopy
@@ -104,7 +104,11 @@ def _eval_worker(args):
     draw_values = []
     move_count = 0
     opening = []
-    actions = []
+    actions = list(FIXED_OPENING_ACTIONS)  # seed with fixed opening so replay includes them
+
+    # Apply fixed opening silently (deterministic, not counted in move_count)
+    for action in FIXED_OPENING_ACTIONS:
+        state = state.next(action)
 
     # Replay the pre-generated opening (same sequence for both games in a pair;
     # game_idx even = model0 first, odd = model1 first — bias cancels within pair).

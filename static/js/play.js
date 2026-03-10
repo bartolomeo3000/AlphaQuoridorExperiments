@@ -40,11 +40,29 @@ function onSideSelectChange() {
   // Rollout selector is always visible — used for AI moves and MCTS analysis
 }
 
+function onGameModeChange() {
+  humanSide = parseInt(document.getElementById('game-mode-select').value, 10);
+  gameMode  = humanSide === 0 ? 'vs_human' : 'vs_ai';
+  document.getElementById('side-select').value = humanSide.toString(); // keep setup in sync
+  document.getElementById('page-title').textContent =
+    gameMode === 'vs_human' ? '2 Player Game' : 'Human vs AI';
+  if (gameState && !gameState.done) renderGame(gameState); // refresh turn indicator
+}
+
+function getAIRollouts() {
+  const el = document.getElementById('game-rollout-select');
+  return parseInt((el || document.getElementById('rollout-select')).value, 10);
+}
+
 async function startNewGame() {
   humanSide        = parseInt(document.getElementById('side-select').value, 10);
   gameMode         = humanSide === 0 ? 'vs_human' : 'vs_ai';
   const rollouts   = parseInt(document.getElementById('rollout-select').value, 10);
   const human_first = gameMode === 'vs_human' || humanSide === 1;
+
+  // Sync mid-game controls
+  document.getElementById('game-mode-select').value    = humanSide.toString();
+  document.getElementById('game-rollout-select').value = rollouts.toString();
 
   document.getElementById('page-title').textContent =
     gameMode === 'vs_human' ? '2 Player Game' : 'Human vs AI';
@@ -162,11 +180,12 @@ async function sendMove(action) {
   if (gameMode !== 'vs_human') show('spinner-wrap');
   gameActive = false;
 
-  const rollouts = parseInt(document.getElementById('rollout-select').value, 10);
+  const rollouts = getAIRollouts();
+  const vsHuman  = gameMode === 'vs_human';
   const data = await fetch('/api/play/move', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action, rollouts }),
+    body: JSON.stringify({ action, rollouts, vs_human: vsHuman }),
   }).then(r => r.json());
 
   hide('spinner-wrap');
@@ -188,13 +207,18 @@ async function sendMove(action) {
 }
 
 function updateUndoBtn() {
-  const btn = document.getElementById('btn-undo');
-  if (!btn) return;
-  btn.disabled = !canUndo || !gameActive || (gameState && gameState.done);
+  const inGame = document.getElementById('btn-undo');
+  const inResult = document.getElementById('btn-undo-result');
+  const midTurn = !gameActive && !(gameState && gameState.done);
+  const enabled = canUndo && !midTurn;
+  if (inGame)   inGame.disabled   = !enabled;
+  if (inResult) inResult.disabled = !enabled;
 }
 
 async function undoMove() {
-  if (!canUndo || !gameActive) return;
+  if (!canUndo) return;
+  // Allow undo when done (post-game exploration); block only during live AI turn
+  if (!gameActive && !(gameState && gameState.done)) return;
   gameActive = false;
   updateUndoBtn();
   const data = await fetch('/api/play/undo', {
@@ -204,12 +228,18 @@ async function undoMove() {
   if (!data.error) {
     gameState = data;
     canUndo = data.can_undo ?? false;
+    // If we undid back into a live position, restore game-panel and dismiss result
+    if (!data.done) {
+      hide('result-panel');
+      show('game-panel');
+      gameActive = true;
+    }
     renderGame(data);
-    gameActive = true;
     fetchAndRenderAnalysis(data, getAnalysisRollouts());
   } else {
     console.warn('Undo error:', data.error);
-    gameActive = true;
+    if (gameState && gameState.done) { /* stay in result panel */ }
+    else gameActive = true;
   }
   updateUndoBtn();
 }
@@ -464,7 +494,7 @@ function anActionLabel(a) {
 /** Run MCTS analysis on demand for the current game position. */
 async function runMCTSAnalysis() {
   if (!gameState || !analysisEnabled) return;
-  const rollouts = parseInt(document.getElementById('rollout-select').value, 10);
+  const rollouts = getAIRollouts();
   await fetchAndRenderAnalysis(gameState, rollouts);
 }
 
@@ -477,7 +507,7 @@ function toggleAutoMCTS() {
 }
 
 function getAnalysisRollouts() {
-  return autoMCTS ? parseInt(document.getElementById('rollout-select').value, 10) : 0;
+  return autoMCTS ? getAIRollouts() : 0;
 }
 
 /** Convert policy action (current-player frame) → board external-hover descriptor. */

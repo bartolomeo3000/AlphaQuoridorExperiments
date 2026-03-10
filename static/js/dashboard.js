@@ -49,16 +49,11 @@ function initCharts() {
     },
   });
 
-  charts.enEntropy = mkChart('c-en-entropy', 'line', [
-    { label: 'Eval Entropy (bits)', data: [], borderColor: '#5ee8c0', backgroundColor: 'transparent', tension: 0.3, yAxisID: 'y' },
-    { label: 'Eval Top-1 Freq', data: [], borderColor: '#e05c6a', backgroundColor: 'transparent', tension: 0.3, yAxisID: 'y2', borderDash: [4,3] },
-  ], {
-    scales: {
-      x: CHART_DEFAULTS.scales.x,
-      y:  { ...CHART_DEFAULTS.scales.y, position: 'left' },
-      y2: { ...CHART_DEFAULTS.scales.y, position: 'right', grid: { drawOnChartArea: false } },
-    },
-  });
+  charts.lossCurve = mkChart('c-loss-curve', 'line', [
+    { label: 'Total Loss',  data: [], borderColor: '#7c6af7', backgroundColor: 'transparent', tension: 0.3 },
+    { label: 'Policy Loss', data: [], borderColor: '#5ee8c0', backgroundColor: 'transparent', tension: 0.3, borderDash: [4,2] },
+    { label: 'Value Loss',  data: [], borderColor: '#e0a84a', backgroundColor: 'transparent', tension: 0.3, borderDash: [4,2] },
+  ]);
 
   charts.gamelen = mkChart('c-gamelen', 'line', [
     { label: 'Avg Game Len', data: [], borderColor: '#5ee8c0', backgroundColor: 'transparent', tension: 0.3, yAxisID: 'y' },
@@ -182,10 +177,7 @@ function updateCharts(rows) {
     rows.map(r => r.sp_top1),
   );
 
-  setData(charts.enEntropy, cycles,
-    rows.map(r => r.en_entropy  != null && r.en_entropy  !== '' ? r.en_entropy  : null),
-    rows.map(r => r.en_top1     != null && r.en_top1     !== '' ? r.en_top1     : null),
-  );
+  // loss curve loaded separately via loadLossCurve()
 
   setData(charts.gamelen, cycles,
     rows.map(r => r.sp_avg_game_len),
@@ -222,12 +214,28 @@ function updateCharts(rows) {
   );
 }
 
+async function loadLossCurve() {
+  const resp = await fetch('/api/loss_curve');
+  const d = await resp.json();
+  if (d.cycle != null) {
+    const el = document.getElementById('loss-curve-title');
+    if (el) el.textContent = `Loss Curve — Cycle ${d.cycle}`;
+  }
+  const chart = charts.lossCurve;
+  chart.data.labels = d.epochs;
+  chart.data.datasets[0].data = d.total;
+  chart.data.datasets[1].data = d.policy;
+  chart.data.datasets[2].data = d.value;
+  chart.update();
+}
+
 async function loadStats() {
   const resp = await fetch('/api/stats');
   const rows = await resp.json();
   updateSummary(rows);
   updateCharts(rows);
   updateStatsTable(rows);
+  await loadLossCurve();
   document.getElementById('last-updated').textContent = new Date().toLocaleTimeString();
 }
 

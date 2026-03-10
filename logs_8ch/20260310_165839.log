@@ -1,0 +1,7 @@
+Logging to ./logs_8ch\20260310_165839.log
+Variant: 8-channel (BFS channels ON)  |  model=./model_8ch  data=./data_8ch
+Resuming from cycle 48
+
+==================== Cycle  48  [16:58:39] ====================
+[resume] self-play checkpoint found: 140/200 games already done
+Self-play 141/200  W:64  D:0  L:77Self-play 142/200  W:64  D:0  L:78Self-play 143/200  W:65  D:0  L:78Self-play 144/200  W:65  D:0  L:79Self-play 145/200  W:65  D:0  L:80Self-play 146/200  W:65  D:0  L:81Self-play 147/200  W:66  D:0  L:81Self-play 148/200  W:67  D:0  L:81Self-play 149/200  W:67  D:0  L:82Self-play 150/200  W:67  D:0  L:83Self-play 151/200  W:67  D:0  L:84

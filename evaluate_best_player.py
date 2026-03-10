@@ -104,7 +104,8 @@ def play(next_actions, opening_actions=()):
     return first_player_point(state), actions
 
 # Evaluation of any algorithm — returns (average_point, game_records)
-def evaluate_algorithm_of(label, next_actions, game_count):
+# nn_action_factory: callable() -> action_fn, called fresh for every game
+def evaluate_algorithm_of(label, nn_action_factory, opponent_action, game_count):
     if game_count == 0:
         return None, []
     total_point = 0
@@ -124,11 +125,12 @@ def evaluate_algorithm_of(label, next_actions, game_count):
 
         for side in range(2):
             i = pair_idx * 2 + side
+            nn_action = nn_action_factory()  # fresh move_count per game
             if side == 0:
-                p, actions = play(next_actions, opening_actions)
+                p, actions = play((nn_action, opponent_action), opening_actions)
                 nn_first = True
             else:
-                p_raw, actions = play(list(reversed(next_actions)), opening_actions)
+                p_raw, actions = play((opponent_action, nn_action), opening_actions)
                 p = 1 - p_raw
                 nn_first = False
             total_point += p
@@ -163,20 +165,19 @@ def evaluate_best_player(cycle_num=None):
     # Load the model of the best player
     model = load_model(os.path.join(MODEL_DIR, 'best.pt'))
 
-    # Generate a function to select actions using PV MCTS
-    next_pv_mcts_action = pv_mcts_action(model, 0.0)
+    # Generate a factory that produces a fresh pv_mcts_action per game
+    # temperature=1 for first 8 model plies, greedy thereafter — adds variety across bench games
+    def nn_factory():
+        return pv_mcts_action(model, temperature=1.0, temp_cutoff=8)
 
     # VS Random
-    next_actions = (next_pv_mcts_action, random_action)
-    vs_random, records_random = evaluate_algorithm_of('VS_Random', next_actions, EP_RANDOM_GAMES)
+    vs_random, records_random = evaluate_algorithm_of('VS_Random', nn_factory, random_action, EP_RANDOM_GAMES)
 
     # VS Greedy Forward
-    next_actions = (next_pv_mcts_action, greedy_forward_action)
-    vs_greedy, records_greedy = evaluate_algorithm_of('VS_GreedyForward', next_actions, EP_GREEDY_GAMES)
+    vs_greedy, records_greedy = evaluate_algorithm_of('VS_GreedyForward', nn_factory, greedy_forward_action, EP_GREEDY_GAMES)
 
     # VS BFS Forward
-    next_actions = (next_pv_mcts_action, bfs_forward_action)
-    vs_bfs, records_bfs = evaluate_algorithm_of('VS_BFS', next_actions, EP_BFS_GAMES)
+    vs_bfs, records_bfs = evaluate_algorithm_of('VS_BFS', nn_factory, bfs_forward_action, EP_BFS_GAMES)
 
     # Clear model
     del model

@@ -20,12 +20,16 @@ EP_BFS_GAMES    = 10   # Games vs BFS-shortest-path agent
 # ── Evaluate network (latest vs best) ────────────────────────────────────────
 EN_GAME_COUNT            = 50    # Evaluation games per cycle — must be even (paired games)
                                  # Each opening is played twice (once per side) to cancel positional bias.
-EN_TEMPERATURE           = 0.0   # Temperature during MCTS play (0 = greedy; diversity comes from EN_FORCED_OPENING)
-EN_TEMP_CUTOFF           = 0     # Unused when EN_TEMPERATURE=0
-EN_FORCED_OPENING        = 2     # Random moves played before MCTS to guarantee diverse starting positions
+EN_TEMPERATURE           = 1.0   # Temperature for opening moves (1.0 = proportional to visit counts)
+EN_TEMP_CUTOFF           = 6     # Switch to greedy after this many plies from the fixed opening position
+EN_FORCED_OPENING        = 0     # Extra random moves after fixed opening (0 = disabled)
 EN_PROMOTE_THRESHOLD     = 0.5  # Min score for latest to replace best00
 EN_DRAW_DISTANCE_SCORING = False # Score draws by BFS distance instead of flat 0.5
-
+# ── Fixed opening (both variants) ───────────────────────────────────────────
+# Both players advance to the board centre — the NN converges to this 100% of
+# the time on the 7×7 board, so we skip it to save 4 MCTS calls per game.
+# Actions 38 = row 5 col 3, 31 = row 4 col 3 (each player advances twice).
+FIXED_OPENING_ACTIONS    = [38, 38, 31, 31]
 # ── MCTS ──────────────────────────────────────────────────────────────────────
 PV_EVALUATE_COUNT  = 600    # Simulations per move during training
 C_PUCT             = 1.25   # Exploration constant in PUCT formula (AlphaZero: ~1.25)
@@ -45,9 +49,9 @@ BFS_ADVANCE_FLOOR    = 0.1  # After all boosts+renorm, ensure each advancing paw
                              # this probability share. Reduced from 0.2 — PUCT bonus handles it.
 BFS_RETREAT_CEILING  = 1.0  # Cap retreating pawn move priors at this value (1.0 = disabled).
 
-BFS_PUCT_ADVANCE_BONUS  = 0.1   # PUCT bonus for pawn moves that advance toward goal.
+BFS_PUCT_ADVANCE_BONUS  = 0.03   # PUCT bonus for pawn moves that advance toward goal.
                                 # Set to 0 (default) to let the NN learn this bias itself.
-BFS_PUCT_RETREAT_PENALTY= 0.2  # PUCT penalty subtracted for pawn moves that retreat.
+BFS_PUCT_RETREAT_PENALTY= 0.15  # PUCT penalty subtracted for pawn moves that retreat.
                                 # Discourages the tree from exploring backward steps.
 BFS_WALL_PUCT_SCALE     = 0.01  # PUCT bonus for wall moves = scale × (Δopp - Δself).
                                 # Linear: each net BFS step blocked adds a flat bonus.
@@ -64,7 +68,7 @@ SP_RESIGN_THRESHOLD  = -0.97  # Resign if MCTS root Q drops below this (None = d
                               # Q ≈ -0.95 → ~2.5% win probability; stricter than AlphaZero default (-0.90)
 SP_RESIGN_CHECK_RATE = 1   # Fraction of games that skip resignation for false-resign detection.
                               # After training, false-resign candidates (Q<threshold AND game recovered)
-SP_OPENING_RATE      = 0.30   # Fraction of games that start with SP_FORCED_OPENING random moves;
+SP_OPENING_RATE      = 0.10   # Fraction of games that start with SP_FORCED_OPENING random moves;
                               # the rest start from the initial position.
 OPENING_DEPTH        = 4      # Plies tracked for opening-diversity entropy metric
 SP_CKPT_EVERY  = 10     # Checkpoint self-play progress every N games (for mid-cycle resume)

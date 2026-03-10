@@ -1,0 +1,272 @@
+{% extends "base.html" %}
+{% block title %}Rules{% endblock %}
+
+{% block head %}
+<style>
+.rules-page { max-width: 860px; }
+.rules-page h1 { font-size: 1.5rem; margin-bottom: 6px; color: var(--text); }
+.rules-page .subtitle { color: var(--text-dim); margin-bottom: 32px; font-size: 0.95rem; }
+
+.rule-section {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 22px 26px;
+  margin-bottom: 20px;
+}
+.rule-section h2 {
+  font-size: 1.05rem;
+  color: var(--accent2);
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.rule-section h2 .num {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  width: 26px; height: 26px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 0.82rem;
+  color: var(--text-dim);
+  flex-shrink: 0;
+}
+.rule-body {
+  display: flex;
+  gap: 28px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+.rule-text { flex: 1; min-width: 220px; }
+.rule-text p { color: var(--text-dim); font-size: 0.92rem; line-height: 1.65; margin-bottom: 8px; }
+.rule-text p:last-child { margin-bottom: 0; }
+.rule-text strong { color: var(--text); }
+.rule-diagram { flex-shrink: 0; }
+
+/* mini board SVG helpers */
+.mbrd { display: block; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="rules-page">
+  <h1>♟ Quoridor Rules</h1>
+  <p class="subtitle">7 × 7 board · 5 walls per player · two-player abstract strategy</p>
+
+  <!-- 1. Objective -->
+  <div class="rule-section">
+    <h2><span class="num">1</span> Objective</h2>
+    <div class="rule-body">
+      <div class="rule-text">
+        <p>Each player starts on the <strong>middle cell of their starting row</strong>. Player 1 starts at the bottom row; Player 2 at the top row.</p>
+        <p>The goal is to be the <strong>first to reach any cell on the opponent's starting row</strong> (the far side of the board).</p>
+        <p>Both players alternate turns. On each turn you either <strong>move your pawn</strong> or <strong>place a wall</strong>.</p>
+      </div>
+      <div class="rule-diagram">
+        <!-- 7×7 overview: labels outside board, arrows offset so they don't cross pawns -->
+        <svg class="mbrd" width="200" height="246" viewBox="0 0 200 246">
+          <defs>
+            <pattern id="grid-obj" width="28" height="28" patternUnits="userSpaceOnUse" x="2" y="20">
+              <rect width="28" height="28" fill="#1a1d27" stroke="#2e3248" stroke-width="1"/>
+            </pattern>
+          </defs>
+          <!-- labels OUTSIDE the board -->
+          <text x="100" y="14" text-anchor="middle" font-size="9" fill="#5ee8c0" font-family="Segoe UI,sans-serif">← P1 GOAL ROW →</text>
+          <!-- board -->
+          <rect x="2" y="20" width="196" height="196" fill="url(#grid-obj)" rx="4"/>
+          <!-- goal row highlights (top and bottom 28px rows) -->
+          <rect x="2" y="20" width="196" height="28" fill="#5ee8c018" rx="4"/>
+          <rect x="2" y="188" width="196" height="28" fill="#7c6af718" rx="4"/>
+          <!-- P2 pawn — top-middle -->
+          <circle cx="100" cy="34" r="11" fill="#5ee8c0" stroke="#0f1117" stroke-width="2"/>
+          <text x="100" y="38" text-anchor="middle" font-size="9" fill="#0f1117" font-weight="bold" font-family="Segoe UI,sans-serif">2</text>
+          <!-- P1 pawn — bottom-middle -->
+          <circle cx="100" cy="202" r="11" fill="#7c6af7" stroke="#0f1117" stroke-width="2"/>
+          <text x="100" y="206" text-anchor="middle" font-size="9" fill="#fff" font-weight="bold" font-family="Segoe UI,sans-serif">1</text>
+          <!-- P1 travel arrow (going up), offset left so it clears both pawns -->
+          <line x1="92" y1="190" x2="92" y2="52" stroke="#7c6af768" stroke-width="1.5" stroke-dasharray="4,3"/>
+          <polygon points="92,46 88,58 96,58" fill="#7c6af7a0"/>
+          <!-- P2 travel arrow (going down), offset right -->
+          <line x1="108" y1="50" x2="108" y2="190" stroke="#5ee8c068" stroke-width="1.5" stroke-dasharray="4,3"/>
+          <polygon points="108,196 104,184 112,184" fill="#5ee8c0a0"/>
+          <text x="100" y="234" text-anchor="middle" font-size="9" fill="#7c6af7" font-family="Segoe UI,sans-serif">← P2 GOAL ROW →</text>
+        </svg>
+      </div>
+    </div>
+  </div>
+
+  <!-- 2. Pawn Movement -->
+  <div class="rule-section">
+    <h2><span class="num">2</span> Pawn Movement</h2>
+    <div class="rule-body">
+      <div class="rule-text">
+        <p>Move your pawn <strong>one cell orthogonally</strong> (up, down, left, or right) — no diagonals.</p>
+        <p>You cannot move through or into a wall segment. Your movement is blocked in any direction where a wall sits between your cell and the adjacent cell.</p>
+      </div>
+      <div class="rule-diagram">
+        <!-- 3×3 mini board, pawn in center, 4 arrows -->
+        <svg class="mbrd" width="130" height="130" viewBox="0 0 130 130">
+          <!-- cells: 36px each, 5px gap, offset 9px -->
+          <!-- cell positions: col*41+9, row*41+9 -->
+          <rect x="9"  y="9"  width="36" height="36" rx="3" fill="#1a1d27" stroke="#2e3248"/>
+          <rect x="50" y="9"  width="36" height="36" rx="3" fill="#1a1d27" stroke="#2e3248"/>
+          <rect x="91" y="9"  width="36" height="36" rx="3" fill="#1a1d27" stroke="#2e3248"/>
+          <rect x="9"  y="50" width="36" height="36" rx="3" fill="#1a1d27" stroke="#2e3248"/>
+          <rect x="50" y="50" width="36" height="36" rx="3" fill="#242736" stroke="#7c6af7" stroke-width="1.5"/>
+          <rect x="91" y="50" width="36" height="36" rx="3" fill="#1a1d27" stroke="#2e3248"/>
+          <rect x="9"  y="91" width="36" height="36" rx="3" fill="#1a1d27" stroke="#2e3248"/>
+          <rect x="50" y="91" width="36" height="36" rx="3" fill="#1a1d27" stroke="#2e3248"/>
+          <rect x="91" y="91" width="36" height="36" rx="3" fill="#1a1d27" stroke="#2e3248"/>
+          <!-- pawn in center -->
+          <circle cx="68" cy="68" r="13" fill="#7c6af7" stroke="#0f1117" stroke-width="2"/>
+          <text x="68" y="72" text-anchor="middle" font-size="10" fill="#fff" font-weight="bold" font-family="Segoe UI,sans-serif">P</text>
+          <!-- arrows to 4 neighbours -->
+          <polygon points="68,44 63,54 73,54" fill="#5ee8c0"/>
+          <polygon points="68,92 63,82 73,82" fill="#5ee8c0"/>
+          <polygon points="44,68 54,63 54,73" fill="#5ee8c0"/>
+          <polygon points="92,68 82,63 82,73" fill="#5ee8c0"/>
+        </svg>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3. Wall Placement -->
+  <div class="rule-section">
+    <h2><span class="num">3</span> Wall Placement</h2>
+    <div class="rule-body">
+      <div class="rule-text">
+        <p>Instead of moving, you may place one wall. Each player has <strong>5 walls</strong> in total. Once placed, walls are permanent.</p>
+        <p>Walls span <strong>exactly 2 cells</strong> along one edge. A <strong>horizontal wall</strong> blocks movement between two rows; a <strong>vertical wall</strong> blocks movement between two columns.</p>
+        <p><strong>Critical rule:</strong> You may never place a wall that completely blocks a player from any path to the goal row — every player must always have at least one route.</p>
+      </div>
+      <div class="rule-diagram">
+        <svg class="mbrd" width="200" height="220" viewBox="0 0 200 220">
+          <!-- 4×3 illustrating H and V walls -->
+          <!-- H-wall demo (top half) label -->
+          <text x="100" y="12" text-anchor="middle" font-size="9" fill="#8890ab" font-family="Segoe UI,sans-serif">HORIZONTAL WALL</text>
+          <!-- 3×2 cells for H wall demo, cell=36, gap=5 -->
+          <rect x="9"  y="17" width="36" height="36" rx="3" fill="#1a1d27" stroke="#2e3248"/>
+          <rect x="50" y="17" width="36" height="36" rx="3" fill="#1a1d27" stroke="#2e3248"/>
+          <rect x="91" y="17" width="36" height="36" rx="3" fill="#1a1d27" stroke="#2e3248"/>
+          <rect x="9"  y="58" width="36" height="36" rx="3" fill="#1a1d27" stroke="#2e3248"/>
+          <rect x="50" y="58" width="36" height="36" rx="3" fill="#1a1d27" stroke="#2e3248"/>
+          <rect x="91" y="58" width="36" height="36" rx="3" fill="#1a1d27" stroke="#2e3248"/>
+          <!-- H wall: sits between rows 0 and 1, spanning cols 0-1 -->
+          <rect x="9" y="52" width="77" height="5" rx="2" fill="#e05c6a"/>
+          <text x="100" y="74" text-anchor="middle" font-size="8" fill="#e05c6a" font-family="Segoe UI,sans-serif">blocks ↕ crossing</text>
+
+          <!-- V-wall demo (bottom half) -->
+          <text x="100" y="115" text-anchor="middle" font-size="9" fill="#8890ab" font-family="Segoe UI,sans-serif">VERTICAL WALL</text>
+          <!-- 2×3 cells for V wall demo -->
+          <rect x="9"  y="120" width="36" height="36" rx="3" fill="#1a1d27" stroke="#2e3248"/>
+          <rect x="50" y="120" width="36" height="36" rx="3" fill="#1a1d27" stroke="#2e3248"/>
+          <rect x="91" y="120" width="36" height="36" rx="3" fill="#1a1d27" stroke="#2e3248"/>
+          <rect x="9"  y="161" width="36" height="36" rx="3" fill="#1a1d27" stroke="#2e3248"/>
+          <rect x="50" y="161" width="36" height="36" rx="3" fill="#1a1d27" stroke="#2e3248"/>
+          <rect x="91" y="161" width="36" height="36" rx="3" fill="#1a1d27" stroke="#2e3248"/>
+          <!-- V wall: between cols 0-1, spanning rows 0-1 -->
+          <rect x="45" y="120" width="5" height="77" rx="2" fill="#e0a84a"/>
+          <text x="100" y="213" text-anchor="middle" font-size="8" fill="#e0a84a" font-family="Segoe UI,sans-serif">blocks ↔ crossing</text>
+        </svg>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4. Jumping -->
+  <div class="rule-section">
+    <h2><span class="num">4</span> Jumping Over Opponents</h2>
+    <div class="rule-body">
+      <div class="rule-text">
+        <p>When the two pawns are <strong>adjacent and facing each other</strong>, the active player may <strong>jump directly over</strong> the opponent (if no wall blocks and the landing cell is within bounds).</p>
+        <p>If a <strong>wall or board edge blocks the straight jump</strong>, the active player may instead move <strong>laterally</strong> — one step to either side of the opponent (a diagonal step relative to the jumper's position).</p>
+        <p>A lateral jump to a given side is also blocked if a <strong>wall sits between the opponent's cell and that lateral destination</strong>. If both sides are blocked, only the legal ones may be taken.</p>
+        <p>Diagonal moves are only allowed as these lateral jumps — never in any other situation.</p>
+      </div>
+      <div class="rule-diagram">
+        <svg class="mbrd" width="185" height="358" viewBox="0 0 185 358">
+          <!-- ═══ PANEL 1: STRAIGHT JUMP ═══ -->
+          <text x="92" y="12" text-anchor="middle" font-size="9" fill="#8890ab" font-family="Segoe UI,sans-serif">STRAIGHT JUMP</text>
+          <!-- 1×3 strip -->
+          <rect x="27" y="17" width="36" height="36" rx="3" fill="#1a1d27" stroke="#2e3248"/>
+          <rect x="27" y="58" width="36" height="36" rx="3" fill="#1a1d27" stroke="#2e3248"/>
+          <rect x="27" y="99" width="36" height="36" rx="3" fill="#1a1d27" stroke="#2e3248"/>
+          <!-- P1 at bottom, P2 in middle, arrow to top cell -->
+          <circle cx="45" cy="117" r="12" fill="#7c6af7" stroke="#0f1117" stroke-width="2"/>
+          <text x="45" y="121" text-anchor="middle" font-size="9" fill="#fff" font-weight="bold" font-family="Segoe UI,sans-serif">1</text>
+          <circle cx="45" cy="76" r="12" fill="#5ee8c0" stroke="#0f1117" stroke-width="2"/>
+          <text x="45" y="80" text-anchor="middle" font-size="9" fill="#0f1117" font-weight="bold" font-family="Segoe UI,sans-serif">2</text>
+          <polygon points="45,32 40,44 50,44" fill="#4caf7d"/>
+
+          <!-- ═══ PANEL 2: LATERAL JUMP — both sides open ═══ -->
+          <text x="92" y="148" text-anchor="middle" font-size="9" fill="#8890ab" font-family="Segoe UI,sans-serif">LATERAL JUMP (wall behind P2)</text>
+          <!-- 3×2 grid -->
+          <rect x="9"  y="155" width="36" height="36" rx="3" fill="#1a1d27" stroke="#2e3248"/>
+          <rect x="50" y="155" width="36" height="36" rx="3" fill="#1a1d27" stroke="#2e3248"/>
+          <rect x="91" y="155" width="36" height="36" rx="3" fill="#1a1d27" stroke="#2e3248"/>
+          <rect x="9"  y="196" width="36" height="36" rx="3" fill="#1a1d27" stroke="#2e3248"/>
+          <rect x="50" y="196" width="36" height="36" rx="3" fill="#1a1d27" stroke="#2e3248"/>
+          <rect x="91" y="196" width="36" height="36" rx="3" fill="#1a1d27" stroke="#2e3248"/>
+          <!-- wall above P2 row––blocks straight jump -->
+          <rect x="50" y="150" width="36" height="5" rx="2" fill="#e05c6a"/>
+          <!-- P1 and P2 -->
+          <circle cx="68" cy="214" r="12" fill="#7c6af7" stroke="#0f1117" stroke-width="2"/>
+          <text x="68" y="218" text-anchor="middle" font-size="9" fill="#fff" font-weight="bold" font-family="Segoe UI,sans-serif">1</text>
+          <circle cx="68" cy="173" r="12" fill="#5ee8c0" stroke="#0f1117" stroke-width="2"/>
+          <text x="68" y="177" text-anchor="middle" font-size="9" fill="#0f1117" font-weight="bold" font-family="Segoe UI,sans-serif">2</text>
+          <!-- both lateral arrows (open) -->
+          <polygon points="23,173 35,168 35,178" fill="#4caf7d"/>
+          <polygon points="113,173 101,168 101,178" fill="#4caf7d"/>
+
+          <!-- ═══ PANEL 3: LATERAL — left side blocked by wall ═══ -->
+          <text x="92" y="252" text-anchor="middle" font-size="9" fill="#8890ab" font-family="Segoe UI,sans-serif">LATERAL BLOCKED (wall to P2's side)</text>
+          <!-- 3×2 grid -->
+          <rect x="9"  y="259" width="36" height="36" rx="3" fill="#1a1d27" stroke="#2e3248"/>
+          <rect x="50" y="259" width="36" height="36" rx="3" fill="#1a1d27" stroke="#2e3248"/>
+          <rect x="91" y="259" width="36" height="36" rx="3" fill="#1a1d27" stroke="#2e3248"/>
+          <rect x="9"  y="300" width="36" height="36" rx="3" fill="#1a1d27" stroke="#2e3248"/>
+          <rect x="50" y="300" width="36" height="36" rx="3" fill="#1a1d27" stroke="#2e3248"/>
+          <rect x="91" y="300" width="36" height="36" rx="3" fill="#1a1d27" stroke="#2e3248"/>
+          <!-- wall above P2 row (blocking straight) -->
+          <rect x="50" y="254" width="36" height="5" rx="2" fill="#e05c6a"/>
+          <!-- vertical wall left of P2's cell (blocks left lateral) -->
+          <rect x="45" y="259" width="5" height="36" rx="2" fill="#e05c6a"/>
+          <!-- P1 and P2 -->
+          <circle cx="68" cy="318" r="12" fill="#7c6af7" stroke="#0f1117" stroke-width="2"/>
+          <text x="68" y="322" text-anchor="middle" font-size="9" fill="#fff" font-weight="bold" font-family="Segoe UI,sans-serif">1</text>
+          <circle cx="68" cy="277" r="12" fill="#5ee8c0" stroke="#0f1117" stroke-width="2"/>
+          <text x="68" y="281" text-anchor="middle" font-size="9" fill="#0f1117" font-weight="bold" font-family="Segoe UI,sans-serif">2</text>
+          <!-- right arrow (allowed) -->
+          <polygon points="113,277 101,272 101,282" fill="#4caf7d"/>
+          <!-- left: blocked mark -->
+          <text x="27" y="282" text-anchor="middle" font-size="15" fill="#e05c6a" font-weight="bold" font-family="Segoe UI,sans-serif">✕</text>
+        </svg>
+      </div>
+    </div>
+  </div>
+
+  <!-- 5. Win condition & draw -->
+  <div class="rule-section">
+    <h2><span class="num">5</span> Winning & Draws</h2>
+    <div class="rule-body">
+      <div class="rule-text">
+        <p>The first player whose pawn <strong>reaches any cell on the opponent's starting row</strong> wins immediately.</p>
+        <p>A <strong>draw</strong> is declared if the same board position (both pawns + all walls) occurs <strong>3 times</strong>, or if the game reaches <strong>{{ draw_depth }} total plies</strong> without a winner.</p>
+        <p>Unlike chess, draws are rare — the game strongly favours decisive outcomes because blocking all paths is illegal.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- 6. This variant -->
+  <div class="rule-section">
+    <h2><span class="num">6</span> This Variant (7 × 7 · 5 walls)</h2>
+    <div class="rule-body">
+      <div class="rule-text">
+        <p>Standard Quoridor is played on a <strong>9 × 9</strong> board with <strong>10 walls</strong> per player. This implementation uses a <strong>7 × 7</strong> board and <strong>5 walls per player</strong> — a smaller, faster game that is well-suited for self-play training.</p>
+        <p>All other rules are identical to standard Quoridor.</p>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
