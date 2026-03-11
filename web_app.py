@@ -405,21 +405,26 @@ def api_loss_curve():
     log_files = glob.glob(os.path.join(LOGS_DIR, '*.log'))
     if not log_files:
         return jsonify({'epochs': [], 'total': [], 'policy': [], 'value': [], 'cycle': None})
-    latest = max(log_files, key=os.path.getmtime)
+    # Sort newest-first and scan until we find a file that contains training data
+    log_files.sort(key=os.path.getmtime, reverse=True)
     pattern = re.compile(
         r'Training epoch\s+(\d+)/\d+\s+loss=([\d.]+)\s+loss_policy=([\d.]+)\s+loss_value=([\d.]+)'
     )
-    blocks, current = [], []
-    with open(latest, 'r', encoding='utf-8', errors='replace') as f:
-        for line in f:
-            m = pattern.search(line)
-            if m:
-                current.append(m)
-            elif current:
-                blocks.append(current)
-                current = []
-    if current:
-        blocks.append(current)
+    blocks = []
+    for log_path in log_files:
+        blocks, current = [], []
+        with open(log_path, 'r', encoding='utf-8', errors='replace') as f:
+            for line in f:
+                m = pattern.search(line)
+                if m:
+                    current.append(m)
+                elif current:
+                    blocks.append(current)
+                    current = []
+        if current:
+            blocks.append(current)
+        if blocks:
+            break  # found a log with training data — use its last block
     if not blocks:
         return jsonify({'epochs': [], 'total': [], 'policy': [], 'value': [], 'cycle': None})
     epochs, total, policy, value = [], [], [], []

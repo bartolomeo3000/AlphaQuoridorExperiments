@@ -20,16 +20,19 @@ EP_BFS_GAMES    = 10   # Games vs BFS-shortest-path agent
 # ── Evaluate network (latest vs best) ────────────────────────────────────────
 EN_GAME_COUNT            = 50    # Evaluation games per cycle — must be even (paired games)
                                  # Each opening is played twice (once per side) to cancel positional bias.
-EN_TEMPERATURE           = 1.0   # Temperature for opening moves (1.0 = proportional to visit counts)
+EN_TEMPERATURE           = 0.75   # Temperature for opening moves (1.0 = proportional to visit counts, 0 = argmax)
 EN_TEMP_CUTOFF           = 6     # Switch to greedy after this many plies from the fixed opening position
 EN_FORCED_OPENING        = 0     # Extra random moves after fixed opening (0 = disabled)
-EN_PROMOTE_THRESHOLD     = 0.5  # Min score for latest to replace best00
+EN_PROMOTE_THRESHOLD     = 0.55  # Min score for latest to replace best
 EN_DRAW_DISTANCE_SCORING = False # Score draws by BFS distance instead of flat 0.5
+
 # ── Fixed opening (both variants) ───────────────────────────────────────────
 # Both players advance to the board centre — the NN converges to this 100% of
 # the time on the 7×7 board, so we skip it to save 4 MCTS calls per game.
 # Actions 38 = row 5 col 3, 31 = row 4 col 3 (each player advances twice).
 FIXED_OPENING_ACTIONS    = [38, 38, 31, 31]
+SP_OG_OPENING_RATE       = 0.10   # Fraction of games that skip FIXED_OPENING_ACTIONS and play from the true start position
+
 # ── MCTS ──────────────────────────────────────────────────────────────────────
 PV_EVALUATE_COUNT  = 600    # Simulations per move during training
 C_PUCT             = 1.25   # Exploration constant in PUCT formula (AlphaZero: ~1.25)
@@ -70,14 +73,14 @@ SP_RESIGN_CHECK_RATE = 1   # Fraction of games that skip resignation for false-r
                               # After training, false-resign candidates (Q<threshold AND game recovered)
 SP_OPENING_RATE      = 0.10   # Fraction of games that start with SP_FORCED_OPENING random moves;
                               # the rest start from the initial position.
-OPENING_DEPTH        = 4      # Plies tracked for opening-diversity entropy metric
+OPENING_DEPTH        = 6      # Plies tracked for opening-diversity entropy metric
 SP_CKPT_EVERY  = 10     # Checkpoint self-play progress every N games (for mid-cycle resume)
 POLICY_TARGET_BLEND = 0.0   # Unused / disabled.
 
 # ── Training ──────────────────────────────────────────────────────────────────
 NUM_EPOCH            = 100      # Epochs per training phase
 BATCH_SIZE           = 256
-REPLAY_BUFFER_CYCLES = 16        # How many most-recent history files to train on
+REPLAY_BUFFER_CYCLES = 20        # How many most-recent history files to train on
 LR                   = 0.001    # Adam initial learning rate
 LR_MIN               = 0.00025  # Cosine-annealing floor (reached at epoch NUM_EPOCH)
 WEIGHT_DECAY         = 0.0005   # L2 regularisation (equivalent to Keras kernel_regularizer)

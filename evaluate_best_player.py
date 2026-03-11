@@ -168,7 +168,7 @@ def evaluate_best_player(cycle_num=None):
     # Generate a factory that produces a fresh pv_mcts_action per game
     # temperature=1 for first 8 model plies, greedy thereafter — adds variety across bench games
     def nn_factory():
-        return pv_mcts_action(model, temperature=1.0, temp_cutoff=8)
+        return pv_mcts_action(model, temperature=1.0, temp_cutoff=3)
 
     # VS Random
     vs_random, records_random = evaluate_algorithm_of('VS_Random', nn_factory, random_action, EP_RANDOM_GAMES)
