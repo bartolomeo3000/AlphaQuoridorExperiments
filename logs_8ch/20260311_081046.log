@@ -3,4 +3,4 @@ Variant: 8-channel (BFS channels ON)  |  model=./model_8ch  data=./data_8ch
 Resuming from cycle 52
 
 ==================== Cycle  52  [08:10:46] ====================
-Self-play 1/200  W:0  D:0  L:1Self-play 2/200  W:1  D:0  L:1Self-play 3/200  W:2  D:0  L:1Self-play 4/200  W:2  D:0  L:2Self-play 5/200  W:2  D:0  L:3Self-play 6/200  W:3  D:0  L:3Self-play 7/200  W:3  D:0  L:4
+Self-play 1/200  W:0  D:0  L:1Self-play 2/200  W:1  D:0  L:1Self-play 3/200  W:2  D:0  L:1Self-play 4/200  W:2  D:0  L:2Self-play 5/200  W:2  D:0  L:3Self-play 6/200  W:3  D:0  L:3Self-play 7/200  W:3  D:0  L:4Self-play 8/200  W:4  D:0  L:4Self-play 9/200  W:4  D:0  L:5Self-play 10/200  W:4  D:0  L:6

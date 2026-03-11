@@ -7,9 +7,11 @@
 import multiprocessing as mp
 
 # ── Variant switch ────────────────────────────────────────────────────────────
-# Set True to use 2 extra BFS goal-distance input channels.
-# Requires a full restart (fresh model + data). The two variants use completely
-# separate model/ and data/ folders so switching never corrupts the other run.
+# 'standard' : 128 filters, 16 blocks — current full-size 8ch run
+# 'mini'     :  64 filters,  6 blocks — smaller network, fresh training run
+VARIANT = 'standard'
+
+# Both variants use BFS channels; keep True unless reverting to legacy 6-ch runs.
 USE_BFS_CHANNELS = True
 
 # ── Evaluate best player (vs hand-coded agents) ───────────────────────────────
@@ -31,7 +33,8 @@ EN_DRAW_DISTANCE_SCORING = False # Score draws by BFS distance instead of flat 0
 # the time on the 7×7 board, so we skip it to save 4 MCTS calls per game.
 # Actions 38 = row 5 col 3, 31 = row 4 col 3 (each player advances twice).
 FIXED_OPENING_ACTIONS    = [38, 38, 31, 31]
-SP_OG_OPENING_RATE       = 0.10   # Fraction of games that skip FIXED_OPENING_ACTIONS and play from the true start position
+MINI_SP_OG_OPENING_RATE = 0.7   # For the mini variant.
+SP_OG_OPENING_RATE = 0.10 if VARIANT == 'standard' else MINI_SP_OG_OPENING_RATE # Fraction of games that skip FIXED_OPENING_ACTIONS and play from the true start position
 
 # ── MCTS ──────────────────────────────────────────────────────────────────────
 PV_EVALUATE_COUNT  = 600    # Simulations per move during training
@@ -78,7 +81,7 @@ SP_CKPT_EVERY  = 10     # Checkpoint self-play progress every N games (for mid-c
 POLICY_TARGET_BLEND = 0.0   # Unused / disabled.
 
 # ── Training ──────────────────────────────────────────────────────────────────
-NUM_EPOCH            = 100      # Epochs per training phase
+NUM_EPOCH            = 60       # Epochs per training phase
 BATCH_SIZE           = 256
 REPLAY_BUFFER_CYCLES = 20        # How many most-recent history files to train on
 LR                   = 0.001    # Adam initial learning rate
@@ -91,12 +94,25 @@ DRAW_SHAPE_SCALE     = 0.2     # Draw value shaping weight.
                                 # 0 = flat 0.5, 1 ≈ full ±1 range; used in self-play & eval data generation
 
 # ── Network architecture ──────────────────────────────────────────────────────
-DN_FILTERS      = 128   # Conv filters per layer  (AlphaZero paper: 256)
-DN_RESIDUAL_NUM = 16    # Residual blocks          (AlphaZero paper: 19)
+if VARIANT == 'mini':
+    DN_FILTERS      = 64    # Mini: better matched to self-play dataset size
+    DN_RESIDUAL_NUM = 6     # Mini: 6 residual blocks
+else:
+    DN_FILTERS      = 128   # Standard (AlphaZero paper: 256)
+    DN_RESIDUAL_NUM = 16    # Standard (AlphaZero paper: 19)
 DRAW_DEPTH      = 100   # Plies before a game is declared a draw (repetition draw can trigger earlier)
 
 # ── Paths (derived — do not edit) ─────────────────────────────────────────────
-MODEL_DIR = './model_8ch' if USE_BFS_CHANNELS else './model_6ch'
-DATA_DIR  = './data_8ch'  if USE_BFS_CHANNELS else './data_6ch'
-LOGS_DIR  = './logs_8ch'  if USE_BFS_CHANNELS else './logs_6ch'
+if VARIANT == 'mini':
+    MODEL_DIR = './model_mini'
+    DATA_DIR  = './data_mini'
+    LOGS_DIR  = './logs_mini'
+elif USE_BFS_CHANNELS:
+    MODEL_DIR = './model_8ch'
+    DATA_DIR  = './data_8ch'
+    LOGS_DIR  = './logs_8ch'
+else:
+    MODEL_DIR = './model_6ch'
+    DATA_DIR  = './data_6ch'
+    LOGS_DIR  = './logs_6ch'
 MODEL_SNAPSHOT_COUNT = 10  # Number of per-cycle snapshots to keep (oldest pruned automatically)
