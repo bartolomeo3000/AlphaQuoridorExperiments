@@ -189,7 +189,19 @@ def logs_page():
 
 @app.route('/matchup')
 def matchup_page():
-    return render_template('matchup.html')
+    defaults = {
+        'pos_boost':       _cfg.POSITION_PRIOR_BOOST,
+        'bfs_boost':       _cfg.BFS_MOVE_BOOST,
+        'bfs_penalty':     _cfg.BFS_MOVE_PENALTY,
+        'bfs_floor':       _cfg.BFS_ADVANCE_FLOOR,
+        'bfs_advance':     _cfg.BFS_PUCT_ADVANCE_BONUS,
+        'bfs_retreat':     _cfg.BFS_PUCT_RETREAT_PENALTY,
+        'wall_scale':      _cfg.BFS_WALL_PUCT_SCALE,
+        'sims':            _cfg.PV_EVALUATE_COUNT,
+        'puct_decay':      _cfg.BFS_PUCT_DECAY,
+        'en_game_count':   _cfg.EN_GAME_COUNT,
+    }
+    return render_template('matchup.html', d=defaults)
 
 
 @app.route('/rules')
@@ -200,12 +212,22 @@ def rules_page():
 
 @app.route('/api/matchup/models')
 def api_matchup_models():
-    """Return list of available model files."""
-    pts = sorted(glob.glob(os.path.join(MODEL_DIR, '*.pt')))
-    saves_dir = MODEL_DIR + '_saves'
-    if os.path.isdir(saves_dir):
-        pts += sorted(glob.glob(os.path.join(saves_dir, '*.pt')))
-    return jsonify([os.path.basename(p) for p in pts])
+    """Return list of available model files across all known variant dirs."""
+    # Scan every variant model directory that exists on disk
+    candidate_dirs = [
+        'model_mini', 'model_8ch', 'model_8ch_v1',
+        'model_6ch_v1', 'model_6ch',
+    ]
+    results = []
+    for d in candidate_dirs:
+        for pt in sorted(glob.glob(os.path.join('.', d, '*.pt'))):
+            rel = d + '/' + os.path.basename(pt)
+            results.append(rel)
+        saves = d + '_saves'
+        for pt in sorted(glob.glob(os.path.join('.', saves, '*.pt'))):
+            rel = saves + '/' + os.path.basename(pt)
+            results.append(rel)
+    return jsonify(results)
 
 
 @app.route('/api/matchup/status')
@@ -234,8 +256,12 @@ def api_matchup_start():
 
     def resolve_model(name):
         if os.path.isabs(name):
-            return name
-        # Try MODEL_DIR first, then saves dir
+            return name if os.path.exists(name) else None
+        # Accept "dir/file.pt" (new cross-variant format) or bare "file.pt" (legacy)
+        if '/' in name or os.sep in name:
+            p = os.path.abspath(name if name.endswith('.pt') else name + '.pt')
+            return p if os.path.exists(p) else None
+        # Legacy: bare filename → search MODEL_DIR then saves dir
         for d in [MODEL_DIR, MODEL_DIR + '_saves']:
             p = os.path.join(d, name if name.endswith('.pt') else name + '.pt')
             if os.path.exists(p):
@@ -326,8 +352,10 @@ def _save_matchup_replay(cfg, snap):
     os.makedirs(mdir, exist_ok=True)
     ts   = datetime.now().strftime('%Y%m%d_%H%M%S')
     path = os.path.join(mdir, f'{ts}.json')
-    ma = os.path.basename(cfg['model_a'])
-    mb = os.path.basename(cfg['model_b'])
+    ma = os.path.join(os.path.basename(os.path.dirname(cfg['model_a'])),
+                      os.path.basename(cfg['model_a']))
+    mb = os.path.join(os.path.basename(os.path.dirname(cfg['model_b'])),
+                      os.path.basename(cfg['model_b']))
     record = {
         'label':     f'{ma} vs {mb}',
         'model_a':   ma,

@@ -19,19 +19,36 @@ let lastCfg     = {};
 
 async function loadModels() {
   const models = await fetch('/api/matchup/models').then(r => r.json());
+
+  // Group by variant directory for optgroup display
+  const groups = {};
+  models.forEach(m => {
+    const slash = m.indexOf('/');
+    const dir  = slash >= 0 ? m.slice(0, slash)  : '(other)';
+    const name = slash >= 0 ? m.slice(slash + 1) : m;
+    (groups[dir] = groups[dir] || []).push({ value: m, name });
+  });
+
+  const defaults = { 'ma-model': 'model_mini/best.pt', 'mb-model': 'model_8ch/best.pt' };
+
   ['ma-model', 'mb-model'].forEach(id => {
     const sel = document.getElementById(id);
     sel.innerHTML = '';
-    models.forEach(m => {
-      const opt = document.createElement('option');
-      opt.value = m;
-      opt.textContent = m;
-      sel.appendChild(opt);
+    Object.entries(groups).forEach(([dir, files]) => {
+      const grp = document.createElement('optgroup');
+      grp.label = dir;
+      files.forEach(({ value, name }) => {
+        const opt = document.createElement('option');
+        opt.value = value;
+        opt.textContent = value;   // show full "dir/file.pt" so the selected label is unambiguous
+        grp.appendChild(opt);
+      });
+      sel.appendChild(grp);
     });
-    // Default: best.pt for A, latest.pt for B
-    const preferred = id === 'ma-model' ? 'best.pt' : 'latest.pt';
-    const option = [...sel.options].find(o => o.value === preferred);
-    if (option) sel.value = option.value;
+    // Default to preferred cross-variant pair; fall back to first available
+    const preferred = defaults[id];
+    const match = [...sel.options].find(o => o.value === preferred);
+    if (match) sel.value = match.value;
   });
 }
 

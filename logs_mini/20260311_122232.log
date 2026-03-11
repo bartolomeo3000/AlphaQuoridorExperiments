@@ -1,0 +1,6 @@
+Logging to ./logs_mini\20260311_122232.log
+Variant: 8-channel (BFS channels ON)  |  model=./model_mini  data=./data_mini
+Resuming from cycle 2
+
+==================== Cycle   2  [12:22:32] ====================
+Self-play 0/0  W:0  D:0  L:0

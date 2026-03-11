@@ -1,0 +1,4 @@
+cycle,timestamp,sp_W_pct,sp_D_pct,sp_L_pct,sp_positions,sp_unique,sp_entropy,sp_top1,sp_avg_game_len,sp_avg_walls,sp_resign_pct,sp_false_resign,loss,loss_policy,loss_value,eval_score,promoted,en_entropy,en_unique,en_top1,vs_random,vs_greedy,vs_bfs,t_selfplay_min,t_train_min,t_evalnet_min,t_evalbest_min,t_cycle_min
+0,10:44:52,43.5,0.0,56.5,4533,198,7.62,2,24.1,9.4,,100.0,1.4918,1.3699,0.1219,0.64,1,5.17,41,5,1.0,0.5,0.0,16.6,0.2,8.8,9.9,35.6
+1,11:20:26,43.0,0.0,57.0,4414,194,7.58,2,23.6,9.0,,100.0,1.2475,1.1208,0.1267,0.92,1,4.4,28,8,1.0,0.65,0.4,38.0,0.4,8.1,10.1,56.6
+2,12:28:33,,,,0,0,,0,,,,,0.6795,0.4774,0.2022,1.0,1,2.15,11,20,,0.8,0.9,0.0,4.3,10.5,6.7,21.5

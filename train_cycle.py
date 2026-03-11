@@ -134,9 +134,9 @@ def _run(stats_path):
         _append_stats(stats_path, {
             'cycle':        cycle_num,
             'timestamp':    ts,
-            'sp_W_pct':     round(sp_stats.get('W_pct', 0), 1),
-            'sp_D_pct':     round(sp_stats.get('D_pct', 0), 1),
-            'sp_L_pct':     round(sp_stats.get('L_pct', 0), 1),
+            'sp_W_pct':     round(sp_stats['W_pct'], 1) if sp_stats.get('W_pct') is not None else '',
+            'sp_D_pct':     round(sp_stats['D_pct'], 1) if sp_stats.get('D_pct') is not None else '',
+            'sp_L_pct':     round(sp_stats['L_pct'], 1) if sp_stats.get('L_pct') is not None else '',
             'sp_positions':    sp_stats.get('positions', ''),
             'sp_unique':        sp_stats.get('unique', ''),
             'sp_entropy':       sp_stats.get('entropy', ''),

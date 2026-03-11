@@ -40,25 +40,30 @@ class ResidualBlock(nn.Module):
 
 # Dual network: shared trunk -> policy head + value head
 class DualNetwork(nn.Module):
-    def __init__(self):
+    def __init__(self, filters=None, num_residual=None):
+        """filters / num_residual default to the config values for the active
+        VARIANT; pass explicit values to instantiate a different-sized network
+        (e.g. to load a model_mini checkpoint while VARIANT='standard')."""
         super().__init__()
-        in_ch = DN_INPUT_SHAPE[2]  # 6 input channels
+        _filters     = filters      if filters      is not None else DN_FILTERS
+        _num_res     = num_residual if num_residual is not None else DN_RESIDUAL_NUM
+        in_ch = DN_INPUT_SHAPE[2]
 
-        self.conv = nn.Conv2d(in_ch, DN_FILTERS, 3, padding=1, bias=False)
+        self.conv = nn.Conv2d(in_ch, _filters, 3, padding=1, bias=False)
         nn.init.kaiming_normal_(self.conv.weight, nonlinearity='relu')
-        self.bn = nn.BatchNorm2d(DN_FILTERS)
+        self.bn = nn.BatchNorm2d(_filters)
 
         self.residuals = nn.Sequential(
-            *[ResidualBlock(DN_FILTERS) for _ in range(DN_RESIDUAL_NUM)]
+            *[ResidualBlock(_filters) for _ in range(_num_res)]
         )
 
-        # Policy head: 1×1 conv (128→2) preserving spatial structure, then linear
-        self.policy_conv = nn.Conv2d(DN_FILTERS, 2, kernel_size=1, bias=False)
+        # Policy head: 1×1 conv preserving spatial structure, then linear
+        self.policy_conv = nn.Conv2d(_filters, 2, kernel_size=1, bias=False)
         self.policy_bn   = nn.BatchNorm2d(2)
         self.policy_fc   = nn.Linear(2 * 7 * 7, DN_OUTPUT_SIZE)
 
-        # Value head: 1×1 conv (128→1), then two-layer MLP
-        self.value_conv  = nn.Conv2d(DN_FILTERS, 1, kernel_size=1, bias=False)
+        # Value head: 1×1 conv, then two-layer MLP
+        self.value_conv  = nn.Conv2d(_filters, 1, kernel_size=1, bias=False)
         self.value_bn    = nn.BatchNorm2d(1)
         self.value_fc1   = nn.Linear(1 * 7 * 7, 64)
         self.value_fc2   = nn.Linear(64, 1)
@@ -92,6 +97,25 @@ def save_model(model, path):
 def load_model(path):
     model = DualNetwork().to(DEVICE)
     model.load_state_dict(torch.load(path, map_location=DEVICE))
+    return model
+
+
+def _infer_arch(state_dict):
+    """Return (filters, num_residual) by inspecting state-dict tensor shapes."""
+    filters     = state_dict['conv.weight'].shape[0]
+    num_residual = sum(
+        1 for k in state_dict if k.startswith('residuals.') and k.endswith('.conv1.weight')
+    )
+    return filters, num_residual
+
+
+def load_model_anyarch(path):
+    """Load a .pt checkpoint regardless of the network size it was saved with.
+    Architecture is inferred automatically from the saved weight shapes."""
+    sd = torch.load(path, map_location=DEVICE)
+    filters, num_residual = _infer_arch(sd)
+    model = DualNetwork(filters=filters, num_residual=num_residual).to(DEVICE)
+    model.load_state_dict(sd)
     return model
 
 

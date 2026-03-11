@@ -9,7 +9,7 @@ import multiprocessing as mp
 # ── Variant switch ────────────────────────────────────────────────────────────
 # 'standard' : 128 filters, 16 blocks — current full-size 8ch run
 # 'mini'     :  64 filters,  6 blocks — smaller network, fresh training run
-VARIANT = 'standard'
+VARIANT = 'mini' # 'standard' or 'mini'
 
 # Both variants use BFS channels; keep True unless reverting to legacy 6-ch runs.
 USE_BFS_CHANNELS = True
@@ -22,8 +22,8 @@ EP_BFS_GAMES    = 10   # Games vs BFS-shortest-path agent
 # ── Evaluate network (latest vs best) ────────────────────────────────────────
 EN_GAME_COUNT            = 50    # Evaluation games per cycle — must be even (paired games)
                                  # Each opening is played twice (once per side) to cancel positional bias.
-EN_TEMPERATURE           = 0.75   # Temperature for opening moves (1.0 = proportional to visit counts, 0 = argmax)
-EN_TEMP_CUTOFF           = 6     # Switch to greedy after this many plies from the fixed opening position
+EN_TEMPERATURE           = 0.8   # Temperature for opening moves (1.0 = proportional to visit counts, 0 = argmax)
+EN_TEMP_CUTOFF           = 8     # Switch to greedy after this many plies from the fixed opening position
 EN_FORCED_OPENING        = 0     # Extra random moves after fixed opening (0 = disabled)
 EN_PROMOTE_THRESHOLD     = 0.55  # Min score for latest to replace best
 EN_DRAW_DISTANCE_SCORING = False # Score draws by BFS distance instead of flat 0.5
@@ -33,11 +33,10 @@ EN_DRAW_DISTANCE_SCORING = False # Score draws by BFS distance instead of flat 0
 # the time on the 7×7 board, so we skip it to save 4 MCTS calls per game.
 # Actions 38 = row 5 col 3, 31 = row 4 col 3 (each player advances twice).
 FIXED_OPENING_ACTIONS    = [38, 38, 31, 31]
-MINI_SP_OG_OPENING_RATE = 0.7   # For the mini variant.
-SP_OG_OPENING_RATE = 0.10 if VARIANT == 'standard' else MINI_SP_OG_OPENING_RATE # Fraction of games that skip FIXED_OPENING_ACTIONS and play from the true start position
+SP_OG_OPENING_RATE = 0.10   # Fraction of games that skip FIXED_OPENING_ACTIONS and play from the true start position
 
 # ── MCTS ──────────────────────────────────────────────────────────────────────
-PV_EVALUATE_COUNT  = 600    # Simulations per move during training
+PV_EVALUATE_COUNT  = 800    # Simulations per move during training
 C_PUCT             = 1.25   # Exploration constant in PUCT formula (AlphaZero: ~1.25)
 FPU_REDUCTION      = None   # First Play Urgency: unvisited Q = parent_Q - FPU_REDUCTION.
                             # None = legacy behaviour (unvisited Q = 0.0 constant).
@@ -83,12 +82,12 @@ POLICY_TARGET_BLEND = 0.0   # Unused / disabled.
 # ── Training ──────────────────────────────────────────────────────────────────
 NUM_EPOCH            = 60       # Epochs per training phase
 BATCH_SIZE           = 256
-REPLAY_BUFFER_CYCLES = 20        # How many most-recent history files to train on
+REPLAY_BUFFER_CYCLES = 20       # How many most-recent history files to train on
 LR                   = 0.001    # Adam initial learning rate
 LR_MIN               = 0.00025  # Cosine-annealing floor (reached at epoch NUM_EPOCH)
 WEIGHT_DECAY         = 0.0005   # L2 regularisation (equivalent to Keras kernel_regularizer)
 GRAD_CLIP_NORM       = 1.0      # Max gradient norm for gradient clipping
-DRAW_SHAPE_SCALE     = 0.2     # Draw value shaping weight.
+DRAW_SHAPE_SCALE     = 0.2      # Draw value shaping weight.
                                 # BFS mode:  scale*(e_bfs_dist - p_bfs_dist)/(N-1)  — wall-aware distances
                                 # Row mode:  scale*(e_row - p_row)/(N-1)             — raw row proxy
                                 # 0 = flat 0.5, 1 ≈ full ±1 range; used in self-play & eval data generation

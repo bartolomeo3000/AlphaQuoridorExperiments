@@ -221,6 +221,16 @@ def self_play(cycle_num=None):
                    progress.  Pass None (default) to skip checkpointing (e.g.
                    when calling self_play() directly from __main__).
     """
+    # SP_GAME_COUNT = 0 → skip self-play entirely and go straight to training
+    if SP_GAME_COUNT == 0:
+        print('Self-play skipped (SP_GAME_COUNT = 0)')
+        return {
+            'W_pct': None, 'D_pct': None, 'L_pct': None,
+            'positions': 0, 'unique': 0, 'entropy': None, 'top1_count': 0,
+            'avg_game_len': None, 'avg_walls': None,
+            'resign_pct': None, 'false_resign_pct': None,
+        }
+
     # Checkpoint path for this cycle (None → no checkpointing)
     ckpt_path = None
     if cycle_num is not None:

@@ -26,7 +26,7 @@ import torch
 import multiprocessing as mp
 
 from game import State
-from dual_network import DualNetwork, load_model
+from dual_network import DualNetwork, load_model, _infer_arch
 from config import (
     MODEL_DIR, EN_TEMPERATURE, EN_TEMP_CUTOFF, EN_FORCED_OPENING,
     POSITION_PRIOR_BOOST, BFS_MOVE_BOOST, BFS_MOVE_PENALTY, BFS_ADVANCE_FLOOR,
@@ -44,11 +44,13 @@ def _worker(args):
         pos_boost_b, bfs_boost_b, bfs_penalty_b, bfs_floor_b, bfs_retreat_b, bfs_wall_b, bfs_advance_b, decay_b, \
         sims_a, sims_b, temperature, temp_cutoff, opening_actions = args
 
-    model_a = DualNetwork()
-    model_a.load_state_dict(torch.load(io.BytesIO(sd_bytes_a), map_location='cpu'))
+    _sd_a = torch.load(io.BytesIO(sd_bytes_a), map_location='cpu')
+    model_a = DualNetwork(*_infer_arch(_sd_a))
+    model_a.load_state_dict(_sd_a)
     model_a.eval()
-    model_b = DualNetwork()
-    model_b.load_state_dict(torch.load(io.BytesIO(sd_bytes_b), map_location='cpu'))
+    _sd_b = torch.load(io.BytesIO(sd_bytes_b), map_location='cpu')
+    model_b = DualNetwork(*_infer_arch(_sd_b))
+    model_b.load_state_dict(_sd_b)
     model_b.eval()
 
     # Even games: A plays first; odd games: B plays first (eliminates first-move advantage)
@@ -114,7 +116,8 @@ def run_matchup(cfg, on_game=None, cancel_flag=None):
     Returns a summary dict.
     """
     def _to_bytes(path):
-        m = load_model(path)
+        from dual_network import load_model_anyarch
+        m = load_model_anyarch(path)
         buf = io.BytesIO()
         torch.save(m.state_dict(), buf)
         del m

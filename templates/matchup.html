@@ -14,31 +14,31 @@
         <select id="ma-model"></select>
       </label>
       <label>Pos boost
-        <input type="number" id="ma-pos"      step="0.1"   min="0" value="3.0">
+        <input type="number" id="ma-pos"      step="0.1"   min="0" value="{{ d.pos_boost }}">
       </label>
       <label>BFS advance boost
-        <input type="number" id="ma-bfs"      step="0.1"   min="0" value="3.0">
+        <input type="number" id="ma-bfs"      step="0.1"   min="0" value="{{ d.bfs_boost }}">
       </label>
       <label>BFS retreat penalty
-        <input type="number" id="ma-penalty"  step="0.05"  min="0" value="0.3">
+        <input type="number" id="ma-penalty"  step="0.05"  min="0" value="{{ d.bfs_penalty }}">
       </label>
       <label>BFS advance floor
-        <input type="number" id="ma-floor"    step="0.01"  min="0" value="0.1">
+        <input type="number" id="ma-floor"    step="0.01"  min="0" value="{{ d.bfs_floor }}">
       </label>
       <label>PUCT advance bonus
-        <input type="number" id="ma-advance"  step="0.01"  min="0" value="0.04">
+        <input type="number" id="ma-advance"  step="0.01"  min="0" value="{{ d.bfs_advance }}">
       </label>
       <label>PUCT retreat penalty
-        <input type="number" id="ma-retreat"  step="0.01"  min="0" value="0.15">
+        <input type="number" id="ma-retreat"  step="0.01"  min="0" value="{{ d.bfs_retreat }}">
       </label>
       <label>Wall BFS scale
-        <input type="number" id="ma-wallscale" step="0.001" min="0" value="0.005">
+        <input type="number" id="ma-wallscale" step="0.001" min="0" value="{{ d.wall_scale }}">
       </label>
       <label>Simulations
-        <input type="number" id="ma-sims"    step="50"   min="1"    value="400">
+        <input type="number" id="ma-sims"    step="50"   min="1"    value="{{ d.sims }}">
       </label>
       <label style="display:flex;align-items:center;gap:6px">
-        <input type="checkbox" id="ma-decay" checked> PUCT decay
+        <input type="checkbox" id="ma-decay" {{ 'checked' if d.puct_decay }}> PUCT decay
       </label>
     </div>
 
@@ -52,31 +52,31 @@
         <select id="mb-model"></select>
       </label>
       <label>Pos boost
-        <input type="number" id="mb-pos"      step="0.1"   min="0" value="3.0">
+        <input type="number" id="mb-pos"      step="0.1"   min="0" value="{{ d.pos_boost }}">
       </label>
       <label>BFS advance boost
-        <input type="number" id="mb-bfs"      step="0.1"   min="0" value="3.0">
+        <input type="number" id="mb-bfs"      step="0.1"   min="0" value="{{ d.bfs_boost }}">
       </label>
       <label>BFS retreat penalty
-        <input type="number" id="mb-penalty"  step="0.05"  min="0" value="0.3">
+        <input type="number" id="mb-penalty"  step="0.05"  min="0" value="{{ d.bfs_penalty }}">
       </label>
       <label>BFS advance floor
-        <input type="number" id="mb-floor"    step="0.01"  min="0" value="0.1">
+        <input type="number" id="mb-floor"    step="0.01"  min="0" value="{{ d.bfs_floor }}">
       </label>
       <label>PUCT advance bonus
-        <input type="number" id="mb-advance"  step="0.01"  min="0" value="0.04">
+        <input type="number" id="mb-advance"  step="0.01"  min="0" value="{{ d.bfs_advance }}">
       </label>
       <label>PUCT retreat penalty
-        <input type="number" id="mb-retreat"  step="0.01"  min="0" value="0.15">
+        <input type="number" id="mb-retreat"  step="0.01"  min="0" value="{{ d.bfs_retreat }}">
       </label>
       <label>Wall BFS scale
-        <input type="number" id="mb-wallscale" step="0.001" min="0" value="0.005">
+        <input type="number" id="mb-wallscale" step="0.001" min="0" value="{{ d.wall_scale }}">
       </label>
       <label>Simulations
-        <input type="number" id="mb-sims"    step="50"   min="1"    value="400">
+        <input type="number" id="mb-sims"    step="50"   min="1"    value="{{ d.sims }}">
       </label>
       <label style="display:flex;align-items:center;gap:6px">
-        <input type="checkbox" id="mb-decay" checked> PUCT decay
+        <input type="checkbox" id="mb-decay" {{ 'checked' if d.puct_decay }}> PUCT decay
       </label>
     </div>
   </div>
@@ -84,7 +84,7 @@
   <!-- Run controls -->
   <div class="matchup-run-row">
     <label>Games (even)
-      <input type="number" id="m-games" min="2" step="2" value="20" style="width:70px">
+      <input type="number" id="m-games" min="2" step="2" value="{{ d.en_game_count }}" style="width:70px">
     </label>
     <button class="btn btn-primary" id="btn-run"    onclick="startMatchup()">&#9654; Run</button>
     <button class="btn btn-danger"  id="btn-cancel" onclick="cancelMatchup()" disabled>&#9632; Cancel</button>
